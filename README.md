@@ -25,8 +25,8 @@ A lightweight, terminal-based video editor built for professionals and enthusias
 - **Auto-Scanning**: Run `svec` in any folder, and it will list all compatible video files for you instantly.
 - **Format Conversion**: Convert between **.mp4, .mkv, .mov, .avi**, or even high-speed **Animated .gif**.
 - **Codec Transcoding**: Easily toggle between H.264 (AVC) and H.265 (HEVC) for maximum compatibility or compression.
-- **Smart File Naming**: SVEC automatically increments filenames (e.g., `video_trim_1.mp4`) so you never overwrite work.
-- **Universal Audio Fix**: Automatically converts raw audio (like `ipcm`) to standard `AAC` so your videos play everywhere.
+- **Smart File Naming**: SVEC automatically increments filenames (e.g., `video_edited_1.mp4`) so you never overwrite work.
+- **Flexible Audio Control**: Choose to keep the original audio stream, convert to compatible AAC, or strip it entirely for a silent video.
 - **Infinite Session**: Edit multiple videos or perform multiple tasks in one go without restarting the app.
 
 ## 📦 Installation

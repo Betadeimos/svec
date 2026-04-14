@@ -104,7 +104,7 @@ async function main() {
     let sessionActive = true;
     while (sessionActive) {
         let state = { step: 0, d: {} };
-        const steps = ['selectFile', 'selectActions', 'configTrim', 'configResize', 'configCodec', 'configFormat', 'configQuality', 'execute'];
+        const steps = ['selectFile', 'selectActions', 'configTrim', 'configResize', 'configCodec', 'configFormat', 'configAudio', 'configQuality', 'execute'];
 
         while (state.step < steps.length) {
             const step = steps[state.step];
@@ -143,9 +143,19 @@ async function main() {
             else if (step === 'configTrim') {
                 if (!state.d.actions.includes('trim')) { state.step++; continue; }
                 const dur = state.d.meta ? `Duration: ${state.d.meta.duration}s, ` : '';
-                const start = await promptStep(text({ message: `Start time (${dur}empty=0s):` }));
+                const start = await promptStep(text({ 
+                    message: `Start time (${dur}empty=0s):`,
+                    validate(v) {
+                        if (v && v.trim() !== '' && parseTime(v) === v && !v.includes(':') && isNaN(parseFloat(v))) return 'Invalid time format (use e.g. 1m 20s, 10s, or 00:00:10)';
+                    }
+                }));
                 if (start === 'back') { state.step--; continue; }
-                const end = await promptStep(text({ message: 'End time (empty=end):' }));
+                const end = await promptStep(text({ 
+                    message: 'End time (empty=end):',
+                    validate(v) {
+                        if (v && v.trim() !== '' && parseTime(v) === v && !v.includes(':') && isNaN(parseFloat(v))) return 'Invalid time format';
+                    }
+                }));
                 if (end === 'back') continue;
                 state.d.trim = { start: (start || '').trim(), end: (end || '').trim() };
                 state.step++;
@@ -157,7 +167,14 @@ async function main() {
                 if (asp === 'back') { state.step--; continue; }
                 let finalAsp = asp;
                 if (asp === 'custom') {
-                    finalAsp = await promptStep(text({ message: 'Enter aspect (e.g. 21:9):' }));
+                    finalAsp = await promptStep(text({ 
+                        message: 'Enter aspect (e.g. 21:9):',
+                        validate(v) {
+                            if (!v || !v.includes(':') || v.split(':').length !== 2 || isNaN(v.split(':')[0]) || isNaN(v.split(':')[1])) {
+                                return 'Use COLON (:) e.g. 21:9';
+                            }
+                        }
+                    }));
                     if (finalAsp === 'back') continue;
                 }
                 
@@ -169,7 +186,15 @@ async function main() {
                     if (logic === 'fit') {
                         padColor = await promptStep(select({ message: 'Padding Color:', options: [{ value: 'black', label: 'Black' }, { value: 'white', label: 'White' }, { value: 'custom', label: 'Custom Hex/RGB' }] }));
                         if (padColor === 'back') continue;
-                        if (padColor === 'custom') { padColor = await promptStep(text({ message: 'Enter color (e.g. #FF0000):' })); if (padColor === 'back') continue; }
+                        if (padColor === 'custom') { 
+                            padColor = await promptStep(text({ 
+                                message: 'Enter color (e.g. #FF0000):',
+                                validate(v) {
+                                    if (!v || v.trim() === '') return 'Color cannot be empty';
+                                }
+                            })); 
+                            if (padColor === 'back') continue; 
+                        }
                     }
                 }
 
@@ -177,7 +202,14 @@ async function main() {
                 if (res === 'back') continue;
                 let tw, th;
                 if (res === 'custom') {
-                    const customRes = await promptStep(text({ message: 'Resolution (W:H):', validate(v) { if (isCancel(v)) return; if (!(v || '').includes(':')) return 'Use COLON (:) e.g. 1920:1080'; } }));
+                    const customRes = await promptStep(text({ 
+                        message: 'Resolution (W:H):', 
+                        validate(v) { 
+                            if (isCancel(v)) return; 
+                            const parts = (v || '').split(':');
+                            if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return 'Use COLON (:) e.g. 1920:1080'; 
+                        } 
+                    }));
                     if (customRes === 'back') continue;
                     [tw, th] = customRes.split(':');
                 } else {
@@ -201,9 +233,26 @@ async function main() {
                 if (!state.d.actions.includes('container')) { state.d.targetExt = path.extname(state.d.videoPath); state.step++; continue; }
                 const ext = await promptStep(select({ message: 'Format:', options: [{ value: '.mp4', label: '.mp4' }, { value: '.mkv', label: '.mkv' }, { value: '.mov', label: '.mov' }, { value: '.gif', label: '.gif' }, { value: 'custom', label: 'Custom' }] }));
                 if (ext === 'back') { state.step--; continue; }
-                let finalExt = ext === 'custom' ? await promptStep(text({ message: 'Extension (.ext):' })) : ext;
+                let finalExt = ext === 'custom' ? await promptStep(text({ 
+                    message: 'Extension (.ext):',
+                    validate(v) {
+                        if (!v || !v.startsWith('.') || v.length < 2) return 'Must start with a DOT (e.g. .avi)';
+                    }
+                })) : ext;
                 if (finalExt === 'back') continue;
                 state.d.targetExt = finalExt;
+                state.step++;
+            }
+
+            else if (step === 'configAudio') {
+                if (state.d.targetExt === '.gif') { state.d.audio = 'remove'; state.step++; continue; }
+                const audio = await promptStep(select({ message: 'Audio settings:', options: [
+                    { value: 'copy', label: 'Keep Original (Stream Copy)' },
+                    { value: 'aac', label: 'Convert to AAC (Recommended)' },
+                    { value: 'remove', label: 'Remove Audio (Mute)' }
+                ] }));
+                if (audio === 'back') { state.step--; continue; }
+                state.d.audio = audio;
                 state.step++;
             }
 
@@ -232,7 +281,16 @@ async function main() {
                 let outputPath = path.join(parsed.dir, `${parsed.name}_edited${state.d.targetExt}`);
                 let c = 1; while (fs.existsSync(outputPath)) { outputPath = path.join(parsed.dir, `${parsed.name}_edited_${c++}${state.d.targetExt}`); }
                 const ffmpegArgs = ['-y', ...inputArgs, '-i', state.d.videoPath, ...outputArgs];
-                if (state.d.targetExt === '.gif') ffmpegArgs.push('-an'); else ffmpegArgs.push('-c:a', 'aac');
+                
+                // Audio handling
+                if (state.d.audio === 'remove' || state.d.targetExt === '.gif') {
+                    ffmpegArgs.push('-an');
+                } else if (state.d.audio === 'copy') {
+                    ffmpegArgs.push('-c:a', 'copy');
+                } else {
+                    ffmpegArgs.push('-c:a', 'aac');
+                }
+
                 ffmpegArgs.push(outputPath);
                 const s = spinner();
                 let labels = state.d.actions.map(a => a === 'trim' ? 'Trimming' : a === 'resize' ? 'Resizing' : a === 'codec' ? 'Transcoding' : 'Converting');
