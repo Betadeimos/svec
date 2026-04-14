@@ -1,0 +1,14 @@
+node_modules/
+.env
+.DS_Store
+*.log
+ffmpeg.exe
+ffprobe.exe
+
+# Ignore large video files and the test folder
+*.mp4
+*.mkv
+*.mov
+*.avi
+"test video/"
+"test_video/"
