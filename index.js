@@ -135,7 +135,8 @@ async function main() {
             options: [
                 { value: 'trim', label: '✂️  Trim Video (set start/end times)' },
                 { value: 'resize', label: '📏 Resize Resolution / Reduce File Size' },
-                { value: 'codec', label: '🔄 Convert Codec (H.264 / H.265)' }
+                { value: 'codec', label: '🔄 Convert Codec (H.264 / H.265)' },
+                { value: 'container', label: '📦 Change Container / Extension (.mp4, .mkv, .gif, etc.)' }
             ],
             required: true
         });
@@ -146,6 +147,7 @@ async function main() {
 
         let inputArgs = [];
         let outputArgs = [];
+        let videoFilters = [];
         let needsReEncode = actions.includes('resize') || actions.includes('codec');
 
         // 1. TRIM
@@ -191,7 +193,7 @@ async function main() {
             });
             if (isCancel(resolution)) break;
             if (resolution.trim()) {
-                outputArgs.push('-vf', `scale=${resolution.trim()}`);
+                videoFilters.push(`scale=${resolution.trim()}`);
             }
 
             const crf = await text({
@@ -216,11 +218,49 @@ async function main() {
             });
             if (isCancel(chosenCodec)) break;
         }
+
+        // 4. CONTAINER / EXTENSION
+        let targetExt = path.extname(cleanVideoPath);
+        if (actions.includes('container')) {
+            targetExt = await select({
+                message: 'Select target format:',
+                options: [
+                    { value: '.mp4', label: '.mp4 (Universal)' },
+                    { value: '.mkv', label: '.mkv (Flexible)' },
+                    { value: '.mov', label: '.mov (Apple QuickTime)' },
+                    { value: '.avi', label: '.avi (Older compatibility)' },
+                    { value: '.gif', label: '.gif (Animated Image)' },
+                    { value: 'custom', label: '✏️  Enter custom extension...' }
+                ]
+            });
+            if (isCancel(targetExt)) break;
+            if (targetExt === 'custom') {
+                targetExt = await text({
+                    message: 'Enter custom extension (e.g. .webm):',
+                    validate(value) {
+                        if (!value.startsWith('.')) return 'Extension must start with a dot (.)';
+                    }
+                });
+                if (isCancel(targetExt)) break;
+            }
+        }
+        
+        if (targetExt === '.gif') {
+            needsReEncode = true;
+        }
         
         if (needsReEncode) {
-            outputArgs.push('-c:v', chosenCodec);
+            if (targetExt === '.gif') {
+                videoFilters.push('fps=15', 'scale=480:-1:flags=lanczos');
+            } else {
+                outputArgs.push('-c:v', chosenCodec);
+            }
         } else {
             outputArgs.push('-c:v', 'copy');
+        }
+
+        if (videoFilters.length > 0) {
+            outputArgs.push('-vf', videoFilters.join(','));
         }
 
         // Output path
@@ -229,12 +269,13 @@ async function main() {
         if (actions.includes('trim')) editedSuffix += '_trim';
         if (actions.includes('resize')) editedSuffix += '_resize';
         if (actions.includes('codec')) editedSuffix += `_${chosenCodec.replace('lib', '')}`;
+        if (actions.includes('container')) editedSuffix += `_converted`;
         if (editedSuffix === '') editedSuffix = '_edited';
 
-        let outputPath = path.join(parsedPath.dir, `${parsedPath.name}${editedSuffix}${parsedPath.ext}`);
+        let outputPath = path.join(parsedPath.dir, `${parsedPath.name}${editedSuffix}${targetExt}`);
         let counter = 1;
         while (fs.existsSync(outputPath)) {
-            outputPath = path.join(parsedPath.dir, `${parsedPath.name}${editedSuffix}_${counter}${parsedPath.ext}`);
+            outputPath = path.join(parsedPath.dir, `${parsedPath.name}${editedSuffix}_${counter}${targetExt}`);
             counter++;
         }
 
@@ -243,9 +284,16 @@ async function main() {
             ...inputArgs,
             '-i', cleanVideoPath,
             ...outputArgs,
-            '-c:a', 'aac', // Always ensure widely compatible audio format
-            outputPath
         ];
+
+        if (targetExt === '.gif') {
+            // GIFs don't have audio
+            ffmpegArgs.push('-an');
+        } else {
+            ffmpegArgs.push('-c:a', 'aac');
+        }
+
+        ffmpegArgs.push(outputPath);
 
         console.log(`\n${pc.cyan('Executing FFmpeg command:')}`);
         console.log(pc.gray(`${ffmpegPath} ${ffmpegArgs.join(' ')}\n`));
