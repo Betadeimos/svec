@@ -87,7 +87,7 @@ async function main() {
 
         if (videoFiles.length > 0) {
             const fileOptions = videoFiles.map(f => ({ value: f, label: f }));
-            fileOptions.push({ value: 'manual', label: '✏️  Enter path manually...' });
+            fileOptions.push({ value: 'manual', label: '✏️  Enter path or Drag & Drop file...' });
             
             const selectedFile = await select({
                 message: 'Select a video file from the current directory:',
@@ -100,34 +100,36 @@ async function main() {
 
             if (selectedFile === 'manual') {
                 const manualPath = await text({
-                    message: 'Enter the path to the video file:',
-                    placeholder: './test_video.mp4',
+                    message: 'Enter the path to the video file (you can Drag & Drop here):',
+                    placeholder: 'C:\\path\\to\\video.mp4',
                     validate(value) {
                         if (value.trim().length === 0) return 'Path is required';
-                        if (!fs.existsSync(value.trim())) return 'File not found at this path';
+                        let testPath = value.trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
+                        if (!fs.existsSync(testPath)) return 'File not found at this path';
                     }
                 });
                 if (isCancel(manualPath)) {
                     break;
                 }
-                cleanVideoPath = manualPath.trim();
+                cleanVideoPath = manualPath.trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
             } else {
                 cleanVideoPath = path.join(cwd, selectedFile);
             }
         } else {
             const videoPath = await text({
-                message: 'Enter the path to the video file:',
-                placeholder: './test_video.mp4',
+                message: 'Enter the path to the video file (you can Drag & Drop here):',
+                placeholder: 'C:\\path\\to\\video.mp4',
                 validate(value) {
                     if (value.trim().length === 0) return 'Path is required';
-                    if (!fs.existsSync(value.trim())) return 'File not found at this path';
+                    let testPath = value.trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
+                    if (!fs.existsSync(testPath)) return 'File not found at this path';
                 }
             });
 
             if (isCancel(videoPath)) {
                 break;
             }
-            cleanVideoPath = videoPath.trim();
+            cleanVideoPath = videoPath.trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
         }
 
         const actions = await multiselect({
@@ -150,7 +152,6 @@ async function main() {
         let videoFilters = [];
         let needsReEncode = actions.includes('resize') || actions.includes('codec');
 
-        // 1. TRIM
         if (actions.includes('trim')) {
             const startTime = await text({
                 message: 'Start time (e.g. 8.5s, 1m 8s, 1h 2m, or 00:01:20.50. Leave empty to skip):',
@@ -172,7 +173,7 @@ async function main() {
 
             if (!needsReEncode) {
                 const exactTrim = await select({
-                    message: 'Do you want to re-encode for precise trimming? (Fast trim copies the stream but may be less accurate on start frames)',
+                    message: 'Do you want to re-encode for precise trimming?\n  (Fast trim copies the stream but may be less accurate on start frames)',
                     options: [
                         { value: false, label: 'Fast Trim (No re-encode, extremely fast)' },
                         { value: true, label: 'Precise Trim (Re-encodes video, slower)' }
@@ -185,7 +186,6 @@ async function main() {
             }
         }
 
-        // 2. RESIZE / REDUCE
         if (actions.includes('resize')) {
             const resolution = await text({
                 message: 'New resolution (e.g., 1280x720, -1:720, or leave empty to keep original):',
@@ -206,8 +206,7 @@ async function main() {
             }
         }
 
-        // 3. CODEC
-        let chosenCodec = 'libx264'; // Default to highly compatible x264 if re-encoding
+        let chosenCodec = 'libx264';
         if (actions.includes('codec')) {
             chosenCodec = await select({
                 message: 'Select video codec:',
@@ -219,7 +218,6 @@ async function main() {
             if (isCancel(chosenCodec)) break;
         }
 
-        // 4. CONTAINER / EXTENSION
         let targetExt = path.extname(cleanVideoPath);
         if (actions.includes('container')) {
             targetExt = await select({
@@ -263,7 +261,6 @@ async function main() {
             outputArgs.push('-vf', videoFilters.join(','));
         }
 
-        // Output path
         const parsedPath = path.parse(cleanVideoPath);
         let editedSuffix = '';
         if (actions.includes('trim')) editedSuffix += '_trim';
@@ -287,7 +284,6 @@ async function main() {
         ];
 
         if (targetExt === '.gif') {
-            // GIFs don't have audio
             ffmpegArgs.push('-an');
         } else {
             ffmpegArgs.push('-c:a', 'aac');
@@ -295,43 +291,53 @@ async function main() {
 
         ffmpegArgs.push(outputPath);
 
-        console.log(`\n${pc.cyan('Executing FFmpeg command:')}`);
-        console.log(pc.gray(`${ffmpegPath} ${ffmpegArgs.join(' ')}\n`));
-
-        const s = spinner();
-        s.start('Processing video...');
-
-        const runFfmpeg = () => new Promise((resolve, reject) => {
+        const runFfmpeg = (taskLabel) => new Promise((resolve, reject) => {
+            const s = spinner();
+            s.start(`${taskLabel}...`);
+            
             const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
 
             ffmpegProcess.stderr.on('data', (data) => {
                 const str = data.toString();
                 const timeMatch = str.match(/time=(\d{2}:\d{2}:\d{2}\.\d{2})/);
                 if (timeMatch) {
-                    s.message(`Processing video... (Time processed: ${timeMatch[1]})`);
+                    s.message(`${taskLabel}... (Processed: ${pc.yellow(timeMatch[1])})`);
                 }
             });
 
             ffmpegProcess.on('close', (code) => {
                 if (code === 0) {
-                    s.stop(pc.green(`✅ Done! Saved to: ${outputPath}`));
+                    s.stop(pc.green(`✅ ${taskLabel} complete!`));
                     resolve();
                 } else {
-                    s.stop(pc.red(`❌ FFmpeg exited with code ${code}`));
+                    s.stop(pc.red(`❌ ${taskLabel} failed (Code ${code})`));
                     reject(new Error(`FFmpeg exited with code ${code}`));
                 }
             });
 
             ffmpegProcess.on('error', (err) => {
-                s.stop(pc.red(`❌ Failed to start FFmpeg`));
+                s.stop(pc.red(`❌ ${taskLabel} failed to start`));
                 reject(err);
             });
         });
 
-        try {
-            await runFfmpeg();
-        } catch (e) {
-            console.error(pc.red('\nTip: Make sure FFmpeg is correctly installed.'));
+        if (actions.length > 0) {
+            try {
+                let taskLabel = 'Processing';
+                if (actions.length === 1) {
+                    if (actions.includes('trim')) taskLabel = 'Trimming video';
+                    if (actions.includes('resize')) taskLabel = 'Resizing video';
+                    if (actions.includes('codec')) taskLabel = 'Converting codec';
+                    if (actions.includes('container')) taskLabel = 'Converting format';
+                } else {
+                    taskLabel = `Performing ${actions.length} edits`;
+                }
+
+                await runFfmpeg(taskLabel);
+                console.log(pc.gray(`\n  Result: ${pc.underline(outputPath)}`));
+            } catch (e) {
+                console.error(pc.red('\nTip: Make sure FFmpeg is correctly installed and working.'));
+            }
         }
 
         const moreEditing = await confirm({
@@ -342,7 +348,7 @@ async function main() {
         if (isCancel(moreEditing) || !moreEditing) {
             sessionActive = false;
         }
-        console.log('\n'); // Add spacing for the next loop
+        console.log('\n');
     }
 
     outro(pc.inverse(' Thank you for using SVEC! '));
