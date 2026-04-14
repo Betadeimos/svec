@@ -6,6 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync, execSync } = require('child_process');
 
+const { version } = require('./package.json');
+
 let ffmpegPath = 'ffmpeg';
 let ffprobePath = 'ffprobe';
 
@@ -95,7 +97,7 @@ async function main() {
   ____) |   \\  /  | |___| |____ 
  |_____/     \\/   |______\\_____|
 `));
-    console.log(pc.gray('   Simplest Video Editor CLI'));
+    console.log(pc.gray(`   Simplest Video Editor CLI  ${pc.cyan('v' + version)}`));
     console.log(pc.gray('   ━━━━━━━━━━━━━━━━━━━━━━━━━'));
     console.log(pc.dim('   Shortcuts: [Ctrl+Q] Quit\n'));
 

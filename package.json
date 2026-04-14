@@ -1,13 +1,14 @@
 {
   "name": "svec",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Simplest video editor for the terminal",
   "main": "index.js",
   "bin": {
     "svec": "index.js"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node test_engine.js"
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0",
