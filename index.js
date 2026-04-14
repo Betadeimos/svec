@@ -7,6 +7,7 @@ const path = require('path');
 const { spawn, spawnSync, execSync } = require('child_process');
 
 let ffmpegPath = 'ffmpeg';
+let ffprobePath = 'ffprobe';
 
 // Global key listener for shortcuts
 process.stdin.on('data', (data) => {
@@ -16,22 +17,40 @@ process.stdin.on('data', (data) => {
 });
 
 async function setupFFmpeg() {
-    const res = spawnSync('ffmpeg', ['-version']);
-    if (!res.error) return;
+    // 1. Check if ffmpeg and ffprobe are in the system PATH (Best performance)
+    const ffmpegRes = spawnSync('ffmpeg', ['-version']);
+    const ffprobeRes = spawnSync('ffprobe', ['-version']);
+    
+    if (!ffmpegRes.error && !ffprobeRes.error) {
+        ffmpegPath = 'ffmpeg';
+        ffprobePath = 'ffprobe';
+        return;
+    }
+
+    // 2. Try to use bundled static binaries (Zero-configuration)
     try {
-        ffmpegPath = require('ffmpeg-static');
-        if (ffmpegPath) return;
+        const staticFfmpeg = require('ffmpeg-static');
+        const staticFfprobe = require('ffprobe-static');
+        if (staticFfmpeg && staticFfprobe.path) {
+            ffmpegPath = staticFfmpeg;
+            ffprobePath = staticFfprobe.path;
+            if (fs.existsSync(ffmpegPath) && fs.existsSync(ffprobePath)) return;
+        }
     } catch (e) {}
-    const shouldInstall = await confirm({ message: 'FFmpeg not found. Install local copy?' });
+
+    // 3. Last resort: Ask to install (shouldn't happen if dependencies are correct)
+    const shouldInstall = await confirm({ message: 'FFmpeg/FFprobe binaries not found. Try reinstalling dependencies?' });
     if (isCancel(shouldInstall) || !shouldInstall) process.exit(1);
+    
     const s = spinner();
-    s.start('Installing FFmpeg...');
+    s.start('Updating dependencies...');
     try {
-        execSync('npm install ffmpeg-static', { stdio: 'ignore' });
+        execSync('npm install ffmpeg-static ffprobe-static', { stdio: 'ignore' });
         ffmpegPath = require('ffmpeg-static');
-        s.stop(pc.green('✅ FFmpeg installed!'));
+        ffprobePath = require('ffprobe-static').path;
+        s.stop(pc.green('✅ Binaries ready!'));
     } catch (err) {
-        s.stop(pc.red('❌ Failed to install FFmpeg'));
+        s.stop(pc.red('❌ Failed to prepare binaries'));
         process.exit(1);
     }
 }
@@ -53,8 +72,6 @@ function parseTime(input) {
 }
 
 function getMetadata(filePath) {
-    let ffprobePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
-    if (process.platform === 'win32' && !ffprobePath.endsWith('.exe') && ffmpegPath.endsWith('.exe')) ffprobePath += '.exe';
     try {
         const result = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,duration,display_aspect_ratio', '-of', 'json', filePath]);
         const data = JSON.parse(result.stdout.toString());

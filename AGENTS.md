@@ -11,9 +11,9 @@ A terminal-based video editor tailored for handling large video files seamlessly
 5. **Format Conversion**: Convert between .mp4, .mkv, .mov, .avi, or .gif.
 
 ## Known Issues / Potential Improvements
-- **Execution Loop Bug**: Sometimes the video processing step repeats automatically even when the user selects "No" to editing another video.
+- **Execution Loop Bug**: Sometimes the video processing step repeats automatically even when the user selects "No" to editing another video. (Fixed: 2026-04-14)
+- **FFmpeg path**: `ffprobe` detection logic was brittle (assumes it's in the same folder as `ffmpeg`). (Improved: 2026-04-14)
 - **Bitrate control**: Currently uses CRF (Quality 1-10) which is good, but doesn't allow target file size.
-- **FFmpeg path**: `ffprobe` detection logic is a bit brittle (assumes it's in the same folder as `ffmpeg`).
 - **Input Validation**: More robust validation for custom aspect ratios and resolutions could be added.
 - **Audio control**: Limited audio options (always converts to AAC).
 - **Error Handling**: Could be improved for cases where FFmpeg fails with specific errors (e.g., out of disk space).
