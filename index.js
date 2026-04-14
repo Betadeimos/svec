@@ -237,7 +237,12 @@ async function main() {
                     ffmpegProcess.on('error', (err) => { s.stop(pc.red(`❌ Error`)); reject(err); });
                 });
                 const more = await confirm({ message: 'Edit another video?' });
-                if (isCancel(more) || !more) sessionActive = false; else state.step = 0;
+                if (isCancel(more) || !more) {
+                    sessionActive = false;
+                    break;
+                } else {
+                    state.step = 0;
+                }
                 console.log('\n');
             }
         }
