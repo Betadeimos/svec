@@ -19,41 +19,52 @@ process.stdin.on('data', (data) => {
 });
 
 async function setupFFmpeg() {
-    // 1. Check if ffmpeg and ffprobe are in the system PATH (Best performance)
+    // 1. Check for FFmpeg (Required)
     const ffmpegRes = spawnSync('ffmpeg', ['-version']);
-    const ffprobeRes = spawnSync('ffprobe', ['-version']);
-    
-    if (!ffmpegRes.error && !ffprobeRes.error) {
+    if (!ffmpegRes.error) {
         ffmpegPath = 'ffmpeg';
-        ffprobePath = 'ffprobe';
-        return;
+    } else {
+        try {
+            const staticFfmpeg = require('ffmpeg-static');
+            if (staticFfmpeg && fs.existsSync(staticFfmpeg)) {
+                ffmpegPath = staticFfmpeg;
+            }
+        } catch (e) {}
     }
 
-    // 2. Try to use bundled static binaries (Zero-configuration)
-    try {
-        const staticFfmpeg = require('ffmpeg-static');
-        const staticFfprobe = require('ffprobe-static');
-        if (staticFfmpeg && staticFfprobe.path) {
-            ffmpegPath = staticFfmpeg;
-            ffprobePath = staticFfprobe.path;
-            if (fs.existsSync(ffmpegPath) && fs.existsSync(ffprobePath)) return;
+    // 2. Check for FFprobe (Optional - used for metadata)
+    const ffprobeRes = spawnSync('ffprobe', ['-version']);
+    if (!ffprobeRes.error) {
+        ffprobePath = 'ffprobe';
+    } else {
+        try {
+            const staticFfprobe = require('ffprobe-static');
+            if (staticFfprobe && staticFfprobe.path && fs.existsSync(staticFfprobe.path)) {
+                ffprobePath = staticFfprobe.path;
+            } else {
+                ffprobePath = null;
+            }
+        } catch (e) {
+            ffprobePath = null;
         }
-    } catch (e) {}
+    }
 
-    // 3. Last resort: Ask to install (shouldn't happen if dependencies are correct)
-    const shouldInstall = await confirm({ message: 'FFmpeg/FFprobe binaries not found. Try reinstalling dependencies?' });
-    if (isCancel(shouldInstall) || !shouldInstall) process.exit(1);
-    
-    const s = spinner();
-    s.start('Updating dependencies...');
-    try {
-        execSync('npm install ffmpeg-static ffprobe-static', { stdio: 'ignore' });
-        ffmpegPath = require('ffmpeg-static');
-        ffprobePath = require('ffprobe-static').path;
-        s.stop(pc.green('✅ Binaries ready!'));
-    } catch (err) {
-        s.stop(pc.red('❌ Failed to prepare binaries'));
-        process.exit(1);
+    // 3. Only prompt if FFmpeg itself is missing entirely
+    if (ffmpegRes.error && ffmpegPath === 'ffmpeg') {
+        const shouldInstall = await confirm({ message: 'FFmpeg was not found. Try installing dependencies?' });
+        if (isCancel(shouldInstall) || !shouldInstall) process.exit(1);
+        
+        const s = spinner();
+        s.start('Updating dependencies...');
+        try {
+            execSync('npm install ffmpeg-static ffprobe-static', { stdio: 'ignore' });
+            ffmpegPath = require('ffmpeg-static');
+            try { ffprobePath = require('ffprobe-static').path; } catch(e) { ffprobePath = null; }
+            s.stop(pc.green('✅ Binaries ready!'));
+        } catch (err) {
+            s.stop(pc.red('❌ Failed to prepare binaries'));
+            process.exit(1);
+        }
     }
 }
 
@@ -74,6 +85,7 @@ function parseTime(input) {
 }
 
 function getMetadata(filePath) {
+    if (!ffprobePath) return null;
     try {
         const result = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,duration,display_aspect_ratio', '-of', 'json', filePath]);
         const data = JSON.parse(result.stdout.toString());
@@ -265,8 +277,18 @@ async function main() {
                 const needs = state.d.resize || state.d.actions.includes('codec') || state.d.targetExt === '.gif';
                 if (!needs) { state.step++; continue; }
                 let est = '';
-                if (state.d.meta && state.d.meta.duration) { const d = parseFloat(state.d.meta.duration); est = `\n  ${pc.gray(`Rough Est: 1≈${(d*0.1).toFixed(1)}MB | 5≈${(d*0.5).toFixed(1)}MB | 10≈${(d*5.0).toFixed(1)}MB`)}`; }
-                const q = await promptStep(select({ message: `Output Quality (1-10):${est}`, options: Array.from({length: 10}, (_, i) => ({ value: (i+1).toString(), label: `${i+1} ${i===0?'(Smallest)':i===4?'(Balanced)':i===9?'(Best)':''}` })) }));
+                if (state.d.meta && state.d.meta.duration) { 
+                    const d = parseFloat(state.d.meta.duration); 
+                    est = `\n  ${pc.gray(`Rough Est: 1≈${(d*0.1).toFixed(1)}MB | 5≈${(d*0.5).toFixed(1)}MB | 10≈${(d*5.0).toFixed(1)}MB`)}`; 
+                }
+                const q = await promptStep(select({ message: `Output Quality (1-10):${est}`, options: Array.from({length: 10}, (_, i) => {
+                    const val = i + 1;
+                    let desc = '';
+                    if (val === 1) desc = ' (Smallest file, lowest quality)';
+                    if (val === 5) desc = ' (Balanced)';
+                    if (val === 10) desc = ' (Largest file, highest quality)';
+                    return { value: val.toString(), label: `${val}${desc}` };
+                })}));
                 if (q === 'back') { state.step--; continue; }
                 state.d.quality = q;
                 state.step++;
@@ -275,7 +297,7 @@ async function main() {
             else if (step === 'execute') {
                 let inputArgs = [], outputArgs = [], videoFilters = [], needsReEncode = state.d.resize || state.d.actions.includes('codec') || state.d.targetExt === '.gif';
                 if (state.d.trim) { inputArgs.push('-ss', parseTime(state.d.trim.start)); if (state.d.trim.end) inputArgs.push('-to', parseTime(state.d.trim.end)); if (!needsReEncode) {
-                    const exact = await promptStep(select({ message: 'Precision Trim (requires re-encode)?\n  (Fast trim copies the stream but may be less accurate\n   on the start frames of the trim)', options: [{ value: false, label: 'Fast (Lossless)' }, { value: true, label: 'Precise (Re-encode)' }] }));
+                    const exact = await promptStep(select({ message: 'Precision Trim (requires re-encode)?', options: [{ value: false, label: 'Fast (Lossless)' }, { value: true, label: 'Precise (Re-encode)' }] }));
                     if (exact === 'back') { state.step--; continue; } if (exact) needsReEncode = true;
                 } }
                 if (state.d.resize) { const { logic, padColor, tw, th, finalAsp } = state.d.resize; if (finalAsp === 'skip') videoFilters.push(`scale=${tw}:${th}`); else if (logic === 'stretch') videoFilters.push(`scale=${tw}:${th},setsar=1:1`); else if (logic === 'fit') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=decrease,pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:${padColor},setsar=1:1`); else if (logic === 'crop') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=increase,crop=${tw}:${th},setsar=1:1`); }
@@ -298,8 +320,15 @@ async function main() {
 
                 ffmpegArgs.push(outputPath);
                 const s = spinner();
-                let labels = state.d.actions.map(a => a === 'trim' ? 'Trimming' : a === 'resize' ? 'Resizing' : a === 'codec' ? 'Transcoding' : 'Converting');
-                let taskLabel = labels.join(', ').replace(/, ([^,]*)$/, ' & $1');
+                
+                // Better Task Labeling
+                let labels = [];
+                if (state.d.actions.includes('trim')) labels.push('Trimming');
+                if (state.d.actions.includes('resize')) labels.push('Resizing');
+                if (state.d.actions.includes('codec')) labels.push('Transcoding');
+                if (state.d.actions.includes('container')) labels.push('Converting');
+                let taskLabel = labels.length === 1 ? `${labels[0]} video` : labels.join(', ').replace(/, ([^,]*)$/, ' & $1');
+                
                 s.start(`${taskLabel}...`);
                 await new Promise((resolve, reject) => {
                     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
@@ -314,7 +343,7 @@ async function main() {
                         if (code === 0) { s.stop(pc.green(`✅ Done! Saved to: ${outputPath}`)); resolve(); }
                         else { s.stop(pc.red(`❌ Failed (Code ${code})`)); reject(); }
                     });
-                    ffmpegProcess.on('error', (err) => { s.stop(pc.red(`❌ Error`)); reject(err); });
+                    ffmpegProcess.on('error', (err) => { s.stop(pc.red(`❌ Error starting FFmpeg`)); reject(err); });
                 });
                 const more = await confirm({ message: 'Edit another video?' });
                 if (isCancel(more) || !more) {

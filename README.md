@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Betadeimos/svec/main/logo.png" alt="SVEC Logo" width="200" onerror="this.style.display='none'">
+</p>
+
 ```text
   ┌───────────────────────────────────────┐
   │                                       │
@@ -9,28 +13,30 @@
   │   ╚══════╝  ╚═══╝  ╚══════╝ ╚═════╝   │
   │                                       │
   └───────────────────────────────────────┘
-  SVEC • Simplest Video Editor CLI • v1.0.4
-  ─────────────────────────────────────────
 ```
 
-# SVEC (Simplest Video Editor CLI) ✂️
+# SVEC (Simplest Video Editor CLI) v1.0.6 ✂️
 
 A lightweight, terminal-based video editor built for professionals and enthusiasts who need to process large video files quickly without the bloat of a GUI. SVEC focuses on speed, precision, and zero-headache workflows.
 
 ## 🚀 Key Features
 
 - **Blazing Fast Trimming**: Uses stream copying (when possible) to trim GBs of video in seconds.
-- **Natural Time Parsing**: Input times naturally like `8.5s`, `1m 20s`, or `1h 2m`. No more tedious `00:00:00.00` formatting.
+- **Natural Time Parsing**: Input times naturally like `1m 20s`, `8.5s`, or `1h`. No more tedious `00:00:00.00` formatting.
+- **Smarter Resizing**: Choose from aspect ratio templates (16:9, 9:16, 1:1, 4:3) and SVEC smartly calculates resolutions. Choose between Fit, Fill (Crop), or Stretch.
+- **Advanced Audio Control**: Dedicated step to select between Original Copy, AAC conversion, or complete removal.
+- **Bootstrap Setup**: New `setup.bat` file allows users without Node.js to install everything automatically via winget.
 - **Drag & Drop Support**: Just drag a file into the terminal. SVEC automatically cleans up quotes and handles paths.
-- **Auto-Scanning**: Run `svec` in any folder, and it will list all compatible video files for you instantly.
-- **Format Conversion**: Convert between **.mp4, .mkv, .mov, .avi**, or even high-speed **Animated .gif**.
-- **Codec Transcoding**: Easily toggle between H.264 (AVC) and H.265 (HEVC) for maximum compatibility or compression.
-- **Smart File Naming**: SVEC automatically increments filenames (e.g., `video_edited_1.mp4`) so you never overwrite work.
-- **Flexible Audio Control**: Choose to keep the original audio stream, convert to compatible AAC, or strip it entirely for a silent video.
-- **Infinite Session**: Edit multiple videos or perform multiple tasks in one go without restarting the app.
+- **Codec & Format Conversion**: Convert between H.264/H.265 and formats like .mp4, .mkv, .mov, or .gif.
+- **State-Driven Navigation**: Hit `Esc` to go back to the previous step or `Ctrl+Q` to quit anytime.
+- **Smart File Naming**: SVEC automatically increments filenames (e.g., `video_trim_1.mp4`) so you never overwrite work.
 
 ## 📦 Installation
 
+### Windows (Recommended)
+If you don't have Node.js installed, download and run `setup.bat` from this repository. It will automatically install Node.js and SVEC for you.
+
+### Manual
 Ensure you have [Node.js](https://nodejs.org/) installed, then run:
 
 ```bash
@@ -48,8 +54,6 @@ svec
 ```
 
 ## ⌨️ Development
-
-To contribute or modify your local version:
 
 1. Clone the repo: `git clone https://github.com/Betadeimos/svec.git`
 2. Install dependencies: `npm install`
