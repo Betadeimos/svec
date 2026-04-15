@@ -146,12 +146,16 @@ async function main() {
                     state.d.videoPath = manual.trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
                 } else { state.d.videoPath = path.join(cwd, sel); }
                 state.d.meta = getMetadata(state.d.videoPath);
-                if (state.d.meta) console.log(pc.blue(`\n  🎞️  ${state.d.meta.width}x${state.d.meta.height} | Aspect: ${state.d.meta.aspect} | ${state.d.meta.duration}s\n`));
+                if (state.d.meta) {
+                    console.log(pc.blue(`\n  🎞️  ${state.d.meta.width}x${state.d.meta.height} | Aspect: ${state.d.meta.aspect} | ${state.d.meta.duration}s\n`));
+                } else if (!ffprobePath) {
+                    console.log(pc.yellow(`\n  ⚠️  Install ffprobe-static for metadata display: npm install ffprobe-static\n`));
+                }
                 state.step++;
             }
 
             else if (step === 'selectActions') {
-                const act = await promptStep(multiselect({ message: 'Select actions:', options: [{ value: 'trim', label: '✂️  Trim Video' }, { value: 'resize', label: '📏 Resize / Aspect Ratio' }, { value: 'codec', label: '🔄 Change Codec' }, { value: 'container', label: '📦 Change Format/Extension' }], required: true }));
+                const act = await promptStep(multiselect({ message: 'What would you like to do?', options: [{ value: 'trim', label: '✂️  Trim (extract a portion)' }, { value: 'resize', label: '📏 Resize / Change aspect ratio' }, { value: 'codec', label: '🔄 Convert codec (H.264/H.265)' }, { value: 'container', label: '📦 Change container format' }], required: true }));
                 if (act === 'back') { state.step--; continue; }
                 state.d.actions = act;
                 state.step++;
@@ -263,10 +267,10 @@ async function main() {
 
             else if (step === 'configAudio') {
                 if (state.d.targetExt === '.gif') { state.d.audio = 'remove'; state.step++; continue; }
-                const audio = await promptStep(select({ message: 'Audio settings:', options: [
-                    { value: 'copy', label: 'Keep Original (Stream Copy)' },
-                    { value: 'aac', label: 'Convert to AAC (Recommended)' },
-                    { value: 'remove', label: 'Remove Audio (Mute)' }
+                const audio = await promptStep(select({ message: 'Audio handling:', options: [
+                    { value: 'copy', label: '🔒 Keep original (lossless copy)' },
+                    { value: 'aac', label: '🔧 Convert to AAC (best compatibility)' },
+                    { value: 'remove', label: '🔇 Remove audio (no sound)' }
                 ] }));
                 if (audio === 'back') { state.step--; continue; }
                 state.d.audio = audio;
@@ -274,18 +278,18 @@ async function main() {
             }
 
             else if (step === 'configQuality') {
-                const needs = state.d.resize || state.d.actions.includes('codec') || state.d.targetExt === '.gif';
-                if (!needs) { state.step++; continue; }
+                const needsReEncode = state.d.resize || state.d.actions.includes('codec') || state.d.targetExt === '.gif' || state.d.trim?.precise;
+                if (!needsReEncode) { state.step++; continue; }
                 let est = '';
                 if (state.d.meta && state.d.meta.duration) { 
                     const d = parseFloat(state.d.meta.duration); 
                     est = `\n  ${pc.gray(`Rough Est: 1≈${(d*0.1).toFixed(1)}MB | 5≈${(d*0.5).toFixed(1)}MB | 10≈${(d*5.0).toFixed(1)}MB`)}`; 
                 }
-                const q = await promptStep(select({ message: `Output Quality (1-10):${est}`, options: Array.from({length: 10}, (_, i) => {
+                const q = await promptStep(select({ message: `Output Quality (1-10):${est}`, initialValue: '5', options: Array.from({length: 10}, (_, i) => {
                     const val = i + 1;
                     let desc = '';
                     if (val === 1) desc = ' (Smallest file, lowest quality)';
-                    if (val === 5) desc = ' (Balanced)';
+                    if (val === 5) desc = ' ← Balanced (Recommended)';
                     if (val === 10) desc = ' (Largest file, highest quality)';
                     return { value: val.toString(), label: `${val}${desc}` };
                 })}));
@@ -295,10 +299,16 @@ async function main() {
             }
 
             else if (step === 'execute') {
-                let inputArgs = [], outputArgs = [], videoFilters = [], needsReEncode = state.d.resize || state.d.actions.includes('codec') || state.d.targetExt === '.gif';
-                if (state.d.trim) { inputArgs.push('-ss', parseTime(state.d.trim.start)); if (state.d.trim.end) inputArgs.push('-to', parseTime(state.d.trim.end)); if (!needsReEncode) {
-                    const exact = await promptStep(select({ message: 'Precision Trim (requires re-encode)?', options: [{ value: false, label: 'Fast (Lossless)' }, { value: true, label: 'Precise (Re-encode)' }] }));
-                    if (exact === 'back') { state.step--; continue; } if (exact) needsReEncode = true;
+                let inputArgs = [], outputArgs = [], videoFilters = [], needsReEncode = state.d.resize || state.d.actions.includes('codec') || state.d.targetExt === '.gif' || state.d.trim?.precise;
+                if (state.d.trim) { inputArgs.push('-ss', parseTime(state.d.trim.start)); if (state.d.trim.end) inputArgs.push('-to', parseTime(state.d.trim.end)); if (!needsReEncode && !state.d.trim.precise) {
+                    const exact = await promptStep(select({ message: 'Trim mode (default: Lossless):', options: [{ value: false, label: '⚡ Fast (Lossless - Copy codec)' }, { value: true, label: '🔧 Precise (Re-encode for frame accuracy)' }] }));
+                    if (exact === 'back') { state.step--; continue; } 
+                    if (exact) {
+                        needsReEncode = true;
+                        state.d.trim.precise = true;
+                    } else {
+                        state.d.trim.precise = false;
+                    }
                 } }
                 if (state.d.resize) { const { logic, padColor, tw, th, finalAsp } = state.d.resize; if (finalAsp === 'skip') videoFilters.push(`scale=${tw}:${th}`); else if (logic === 'stretch') videoFilters.push(`scale=${tw}:${th},setsar=1:1`); else if (logic === 'fit') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=decrease,pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:${padColor},setsar=1:1`); else if (logic === 'crop') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=increase,crop=${tw}:${th},setsar=1:1`); }
                 if (state.d.targetExt === '.gif') videoFilters.push('fps=15', 'scale=480:-1:flags=lanczos');
@@ -319,6 +329,11 @@ async function main() {
                 }
 
                 ffmpegArgs.push(outputPath);
+                
+                // Show summary before processing
+                const mode = needsReEncode ? pc.yellow('Re-encoding') : pc.green('Lossless (stream copy)');
+                console.log(pc.dim(`\n  Mode: ${mode} | Output: ${path.basename(outputPath)}\n`));
+                
                 const s = spinner();
                 
                 // Better Task Labeling
@@ -333,17 +348,25 @@ async function main() {
                 await new Promise((resolve, reject) => {
                     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
                     let lastUpdate = 0;
+                    let errorOutput = '';
                     ffmpegProcess.stderr.on('data', (data) => {
                         const now = Date.now();
+                        errorOutput += data.toString();
                         if (now - lastUpdate < 1000) return;
                         const match = data.toString().match(/time=(\d{2}:\d{2}:\d{2}\.\d{2})/);
                         if (match) { s.message(`${taskLabel}... (Time: ${pc.yellow(match[1])})`); lastUpdate = now; }
                     });
                     ffmpegProcess.on('close', (code) => {
                         if (code === 0) { s.stop(pc.green(`✅ Done! Saved to: ${outputPath}`)); resolve(); }
-                        else { s.stop(pc.red(`❌ Failed (Code ${code})`)); reject(); }
+                        else { 
+                            const errMsg = errorOutput.includes('No such file') ? 'File not found' : 
+                                          errorOutput.includes('Invalid data') ? 'Invalid video file' : 
+                                          `Failed (code ${code})`;
+                            s.stop(pc.red(`❌ ${errMsg}`)); 
+                            reject(); 
+                        }
                     });
-                    ffmpegProcess.on('error', (err) => { s.stop(pc.red(`❌ Error starting FFmpeg`)); reject(err); });
+                    ffmpegProcess.on('error', (err) => { s.stop(pc.red(`❌ Cannot start FFmpeg: ${err.message}`)); reject(err); });
                 });
                 const more = await confirm({ message: 'Edit another video?' });
                 if (isCancel(more) || !more) {

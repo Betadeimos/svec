@@ -15,7 +15,7 @@
   └───────────────────────────────────────┘
 ```
 
-# SVEC (Simplest Video Editor CLI) v1.0.6 ✂️
+# SVEC (Simplest Video Editor CLI) v1.0.7 ✂️
 
 A lightweight, terminal-based video editor built for professionals and enthusiasts who need to process large video files quickly without the bloat of a GUI. SVEC focuses on speed, precision, and zero-headache workflows.
 
@@ -30,6 +30,7 @@ A lightweight, terminal-based video editor built for professionals and enthusias
 - **Codec & Format Conversion**: Convert between H.264/H.265 and formats like .mp4, .mkv, .mov, or .gif.
 - **State-Driven Navigation**: Hit `Esc` to go back to the previous step or `Ctrl+Q` to quit anytime.
 - **Smart File Naming**: SVEC automatically increments filenames (e.g., `video_trim_1.mp4`) so you never overwrite work.
+- **Quality 1-10 Scale**: Simplified quality selection (defaults to 5 - Balanced) with real-time file size estimations.
 
 ## 📦 Installation
 

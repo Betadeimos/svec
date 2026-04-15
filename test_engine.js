@@ -3,15 +3,53 @@ const fs = require('fs');
 const path = require('path');
 const pc = require('picocolors');
 
-const ffmpegPath = require('ffmpeg-static');
-const ffprobePath = require('ffprobe-static').path;
+// Get FFmpeg (required)
+let ffmpegPath;
+try {
+    ffmpegPath = require('ffmpeg-static');
+} catch (e) {
+    console.error(pc.red('❌ ffmpeg-static not installed. Run: npm install'));
+    process.exit(1);
+}
+
+// Get FFprobe (optional for tests)
+let ffprobePath = null;
+// First check system PATH
+const ffprobeRes = spawnSync('ffprobe', ['-version']);
+if (!ffprobeRes.error) {
+    ffprobePath = 'ffprobe';
+    console.log(pc.dim('Using ffprobe from system PATH'));
+} else {
+    // Fall back to static binary
+    try {
+        ffprobePath = require('ffprobe-static').path;
+        if (ffprobePath && fs.existsSync(ffprobePath)) {
+            console.log(pc.dim('Using ffprobe-static binary'));
+        } else {
+            ffprobePath = null;
+            console.log(pc.yellow('⚠️  ffprobe not available. Metadata validation will be skipped.'));
+        }
+    } catch (e) {
+        ffprobePath = null;
+        console.log(pc.yellow('⚠️  ffprobe not available. Metadata validation will be skipped.'));
+    }
+}
 
 const TEST_VIDEO = 'test_footage.mp4';
 const OUTPUT_DIR = 'test_output';
 
 if (!fs.existsSync(TEST_VIDEO)) {
-    console.error(pc.red(`Error: ${TEST_VIDEO} not found. Please ensure it exists in the root directory.`));
-    process.exit(1);
+    console.log(pc.yellow(`⚠️  ${TEST_VIDEO} not found. Creating test video...`));
+    const result = spawnSync(ffmpegPath, [
+        '-f', 'lavfi', '-i', 'testsrc=duration=5:size=1920x1080:rate=30',
+        '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=5',
+        '-pix_fmt', 'yuv420p', '-y', TEST_VIDEO
+    ]);
+    if (result.status !== 0 || !fs.existsSync(TEST_VIDEO)) {
+        console.error(pc.red('❌ Failed to create test video. Please provide test_footage.mp4 manually.'));
+        process.exit(1);
+    }
+    console.log(pc.green('✅ Test video created'));
 }
 
 if (!fs.existsSync(OUTPUT_DIR)) {
@@ -19,6 +57,7 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 }
 
 function getMetadata(filePath) {
+    if (!ffprobePath) return null;
     try {
         const result = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,duration', '-of', 'json', filePath]);
         return JSON.parse(result.stdout.toString()).streams[0];
@@ -46,6 +85,12 @@ async function runTest(name, args, validator = null) {
     const duration = ((end - start) / 1000).toFixed(2);
 
     if (result.status === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 1000) {
+        // Skip metadata validation if ffprobe is not available
+        if (!ffprobePath) {
+            console.log(`${pc.green('✔')} ${pc.bold(name)} - ${pc.yellow(duration + 's')} ${pc.dim('(metadata check skipped)')}`);
+            return { success: true };
+        }
+        
         const meta = getMetadata(outPath);
         if (!meta) {
             console.log(`${pc.red('✘')} ${pc.bold(name)} - ${pc.red('NO VIDEO STREAM')}`);
@@ -69,6 +114,7 @@ async function runTest(name, args, validator = null) {
 }
 
 function checkAudio(filePath) {
+    if (!ffprobePath) return null;
     const res = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_name', '-of', 'json', filePath]);
     try {
         const data = JSON.parse(res.stdout.toString());

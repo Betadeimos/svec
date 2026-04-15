@@ -1,12 +1,15 @@
-# SVEC - Simplest Video Editor CLI (v1.0.6)
+# SVEC - Simplest Video Editor CLI (v1.0.7)
 
 ## ⚠️ SACRED RULES (Read before every execution)
 1. **SPEED TRUMPS EVERYTHING**: Every feature must be optimized for maximum speed and minimum overhead. 
 2. **KEEP IT LIGHT**: No unnecessary dependencies, no heavy processing, no bloat.
 3. **SINGLE-PASS PHILOSOPHY**: Keep FFmpeg operations to a single pass whenever possible to maintain lossless quality and save time.
-4. **CHALLENGE BLOAT**: If a request would make SVEC slow, sluggish, or heavy, CHALLENGE the idea.
-5. **LOOP PROTECTION**: If a bash command fails or gets stuck, STOP immediately and ask the user to run it.
-6. **VERSIONING**: Increase the version number in package.json, index.js, and docs before every push.
+4. **DEFAULT TO LOSSLESS**: If not explicitly specified, video operations must remain lossless. A simple trim should never re-encode unless the user explicitly chooses to.
+5. **CHALLENGE BLOAT**: If a request would make SVEC slow, sluggish, or heavy, CHALLENGE the idea.
+6. **LOOP PROTECTION**: If a bash command fails or gets stuck, STOP immediately and ask the user to run it.
+7. **VERSIONING**: Increase the version number in package.json and docs before every push.
+8. **TEST BEFORE COMMIT**: Run `npm test` before every backend change commit. If tests fail, fix before pushing. If test file is missing, create it.
+9. **DOC SYNC**: Update AGENTS.md and README.md with every functional change to keep documentation in sync with the app.
 
 ## Overview
 A terminal-based video editor tailored for handling large video files seamlessly. It offers targeted functionalities rather than being a monolithic tool, prioritizing speed, lossless quality where possible, and a professional-grade TUI experience.
@@ -23,7 +26,7 @@ A terminal-based video editor tailored for handling large video files seamlessly
 - **State-Driven Navigation**: Robust menu system allowing `Esc` to go back one step and `Ctrl+Q` to quit at any time.
 - **Dynamic Metadata**: Real-time resolution, aspect ratio, and duration display upon file selection.
 - **Natural Time Input**: Input times naturally like `1m 20s`, `8.5s`, or `1h`.
-- **Quality 1-10 Scale**: Simplified quality selection with real-time rough file size estimations.
+- **Quality 1-10 Scale**: Simplified quality selection (defaults to 5 - Balanced) with real-time rough file size estimations.
 - **Drag & Drop**: Intelligent Windows path cleanup (automatic quote removal).
 - **Bootstrap Setup**: `setup.bat` handles Node.js and SVEC installation automatically via Windows `winget`.
 
@@ -33,6 +36,7 @@ A terminal-based video editor tailored for handling large video files seamlessly
 - **FFmpeg & FFprobe**: The core processing engines (bundled via static binaries or used from system PATH).
 
 ## Release History
+- **v1.0.7**: Polished UX, improved error handling, lossless-by-default enforcement.
 - **v1.0.6**: Formalized Core Development Principles and versioning rules.
 - **v1.0.5**: Bootstrap setup (`setup.bat`), Audio control, Aspect ratio templates, and State-driven navigation fixed.
 - **v1.0.0**: Initial Release.
