@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { intro, outro, text, select, multiselect, spinner, isCancel, cancel, confirm } = require('@clack/prompts');
+const { outro, text, select, multiselect, spinner, isCancel, confirm } = require('@clack/prompts');
 const pc = require('picocolors');
 const fs = require('fs');
 const path = require('path');
@@ -88,7 +88,10 @@ function getMetadata(filePath) {
     if (!ffprobePath) return null;
     try {
         const result = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,duration,display_aspect_ratio', '-of', 'json', filePath]);
-        const data = JSON.parse(result.stdout.toString());
+        const stdout = result.stdout.toString();
+        if (!stdout) return null;
+        const data = JSON.parse(stdout);
+        if (!data || !data.streams || !data.streams[0]) return null;
         const stream = data.streams[0];
         return { width: stream.width, height: stream.height, duration: parseFloat(stream.duration).toFixed(1), aspect: stream.display_aspect_ratio || `${(stream.width/stream.height).toFixed(2)}:1` };
     } catch (e) { return null; }
@@ -191,8 +194,9 @@ async function main() {
                     finalAsp = await promptStep(text({ 
                         message: 'Enter aspect (e.g. 21:9):',
                         validate(v) {
-                            if (!v || !v.includes(':') || v.split(':').length !== 2 || isNaN(v.split(':')[0]) || isNaN(v.split(':')[1])) {
-                                return 'Use COLON (:) e.g. 21:9';
+                            const parts = v.split(':');
+                            if (!v || !v.includes(':') || parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1]) || parseFloat(parts[0]) <= 0 || parseFloat(parts[1]) <= 0) {
+                                return 'Use positive numbers with COLON (:) e.g. 21:9';
                             }
                         }
                     }));
@@ -228,7 +232,9 @@ async function main() {
                         validate(v) { 
                             if (isCancel(v)) return; 
                             const parts = (v || '').split(':');
-                            if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return 'Use COLON (:) e.g. 1920:1080'; 
+                            if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1]) || parseInt(parts[0]) <= 0 || parseInt(parts[1]) <= 0) {
+                                return 'Use positive numbers with COLON (:) e.g. 1920:1080';
+                            }
                         } 
                     }));
                     if (customRes === 'back') continue;
@@ -252,7 +258,7 @@ async function main() {
 
             else if (step === 'configFormat') {
                 if (!state.d.actions.includes('container')) { state.d.targetExt = path.extname(state.d.videoPath); state.step++; continue; }
-                const ext = await promptStep(select({ message: 'Format:', options: [{ value: '.mp4', label: '.mp4' }, { value: '.mkv', label: '.mkv' }, { value: '.mov', label: '.mov' }, { value: '.gif', label: '.gif' }, { value: 'custom', label: 'Custom' }] }));
+                const ext = await promptStep(select({ message: 'Format:', options: [{ value: '.mp4', label: '.mp4' }, { value: '.mkv', label: '.mkv' }, { value: '.mov', label: '.mov' }, { value: '.avi', label: '.avi' }, { value: '.gif', label: '.gif' }, { value: 'custom', label: 'Custom' }] }));
                 if (ext === 'back') { state.step--; continue; }
                 let finalExt = ext === 'custom' ? await promptStep(text({ 
                     message: 'Extension (.ext):',
@@ -283,7 +289,11 @@ async function main() {
                 let est = '';
                 if (state.d.meta && state.d.meta.duration) { 
                     const d = parseFloat(state.d.meta.duration); 
-                    est = `\n  ${pc.gray(`Rough Est: 1≈${(d*0.1).toFixed(1)}MB | 5≈${(d*0.5).toFixed(1)}MB | 10≈${(d*5.0).toFixed(1)}MB`)}`; 
+                    const isGif = state.d.targetExt === '.gif';
+                    const low = isGif ? 0.04 : 0.08;
+                    const mid = isGif ? 0.25 : 0.5;
+                    const high = isGif ? 0.8 : 2.5;
+                    est = `\n  ${pc.gray(`Rough Est: 1≈${(d*low).toFixed(1)}MB | 5≈${(d*mid).toFixed(1)}MB | 10≈${(d*high).toFixed(1)}MB`)}`; 
                 }
                 const q = await promptStep(select({ message: `Output Quality (1-10):${est}`, initialValue: '5', options: Array.from({length: 10}, (_, i) => {
                     const val = i + 1;
@@ -299,20 +309,29 @@ async function main() {
             }
 
             else if (step === 'execute') {
-                let inputArgs = [], outputArgs = [], videoFilters = [], needsReEncode = state.d.resize || state.d.actions.includes('codec') || state.d.targetExt === '.gif' || state.d.trim?.precise;
-                if (state.d.trim) { inputArgs.push('-ss', parseTime(state.d.trim.start)); if (state.d.trim.end) inputArgs.push('-to', parseTime(state.d.trim.end)); if (!needsReEncode && !state.d.trim.precise) {
-                    const exact = await promptStep(select({ message: 'Trim mode (default: Lossless):', options: [{ value: false, label: '⚡ Fast (Lossless - Copy codec)' }, { value: true, label: '🔧 Precise (Re-encode for frame accuracy)' }] }));
-                    if (exact === 'back') { state.step--; continue; } 
-                    if (exact) {
-                        needsReEncode = true;
-                        state.d.trim.precise = true;
-                    } else {
-                        state.d.trim.precise = false;
-                    }
-                } }
-                if (state.d.resize) { const { logic, padColor, tw, th, finalAsp } = state.d.resize; if (finalAsp === 'skip') videoFilters.push(`scale=${tw}:${th}`); else if (logic === 'stretch') videoFilters.push(`scale=${tw}:${th},setsar=1:1`); else if (logic === 'fit') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=decrease,pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:${padColor},setsar=1:1`); else if (logic === 'crop') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=increase,crop=${tw}:${th},setsar=1:1`); }
-                if (state.d.targetExt === '.gif') videoFilters.push('fps=15', 'scale=480:-1:flags=lanczos');
-                if (needsReEncode) { const crfMap = { '1': 45, '2': 40, '3': 35, '4': 30, '5': 26, '6': 23, '7': 20, '8': 18, '9': 14, '10': 10 }; outputArgs.push('-c:v', state.d.codec || 'libx264', '-crf', crfMap[state.d.quality || '5'].toString()); } else { outputArgs.push('-c:v', 'copy'); }
+                let inputArgs = [], outputArgs = [], videoFilters = [], needsReEncode = state.d.resize || state.d.actions.includes('codec') || state.d.targetExt === '.gif';
+                
+                if (state.d.trim) { 
+                    inputArgs.push('-ss', parseTime(state.d.trim.start)); 
+                    if (state.d.trim.end) inputArgs.push('-to', parseTime(state.d.trim.end)); 
+                    
+                    if (!needsReEncode && state.d.trim.precise === undefined) {
+                        const exact = await promptStep(select({ 
+                            message: 'Trim mode (default: Lossless):', 
+                            options: [
+                                { value: false, label: '⚡ Fast (Lossless - Copy codec)' }, 
+                                { value: true, label: '🔧 Precise (Re-encode for frame accuracy)' }
+                            ] 
+                        }));
+                        if (exact === 'back') { state.step--; continue; } 
+                        state.d.trim.precise = !!exact;
+                    } 
+                    if (state.d.trim.precise) needsReEncode = true;
+                }
+
+                if (state.d.resize) { const { logic, padColor, tw, th, finalAsp } = state.d.resize; if (finalAsp === 'skip') videoFilters.push(`scale=${tw}:${th},setsar=1:1`); else if (logic === 'stretch') videoFilters.push(`scale=${tw}:${th},setsar=1:1`); else if (logic === 'fit') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=decrease,pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:${padColor},setsar=1:1`); else if (logic === 'crop') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=increase,crop=${tw}:${th},setsar=1:1`); }
+                if (state.d.targetExt === '.gif') { const gifMap = { '1': [5, 320], '2': [8, 360], '3': [10, 380], '4': [12, 420], '5': [15, 480], '6': [18, 540], '7': [20, 600], '8': [22, 640], '9': [25, 680], '10': [30, 720] }; const [gfps, gscale] = gifMap[state.d.quality || '5']; videoFilters.push(`fps=${gfps},scale=${gscale}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`); }
+                if (needsReEncode && state.d.targetExt !== '.gif') { const crfMap = { '1': 45, '2': 40, '3': 35, '4': 30, '5': 26, '6': 23, '7': 20, '8': 18, '9': 14, '10': 10 }; outputArgs.push('-c:v', state.d.codec || 'libx264', '-crf', crfMap[state.d.quality || '5'].toString()); } else if (state.d.targetExt !== '.gif') { outputArgs.push('-c:v', 'copy'); }
                 if (videoFilters.length > 0) outputArgs.push('-vf', videoFilters.join(','));
                 const parsed = path.parse(state.d.videoPath);
                 let outputPath = path.join(parsed.dir, `${parsed.name}_edited${state.d.targetExt}`);

@@ -1,42 +1,55 @@
-# SVEC - Simplest Video Editor CLI (v1.0.7)
+# SVEC — Agent Instructions (v1.0.8)
 
-## ⚠️ SACRED RULES (Read before every execution)
-1. **SPEED TRUMPS EVERYTHING**: Every feature must be optimized for maximum speed and minimum overhead. 
-2. **KEEP IT LIGHT**: No unnecessary dependencies, no heavy processing, no bloat.
-3. **SINGLE-PASS PHILOSOPHY**: Keep FFmpeg operations to a single pass whenever possible to maintain lossless quality and save time.
-4. **DEFAULT TO LOSSLESS**: If not explicitly specified, video operations must remain lossless. A simple trim should never re-encode unless the user explicitly chooses to.
-5. **CHALLENGE BLOAT**: If a request would make SVEC slow, sluggish, or heavy, CHALLENGE the idea.
-6. **LOOP PROTECTION**: If a bash command fails or gets stuck, STOP immediately and ask the user to run it.
-7. **VERSIONING**: Increase the version number in package.json and docs before every push.
-8. **TEST BEFORE COMMIT**: Run `npm test` before every backend change commit. If tests fail, fix before pushing. If test file is missing, create it.
-9. **DOC SYNC**: Update AGENTS.md and README.md with every functional change to keep documentation in sync with the app.
+## ⚠️ READ THIS FIRST, EVERY TIME
 
-## Overview
-A terminal-based video editor tailored for handling large video files seamlessly. It offers targeted functionalities rather than being a monolithic tool, prioritizing speed, lossless quality where possible, and a professional-grade TUI experience.
+### Project Location & Path Rules
+You are already executing inside the project root directory. 
 
-## Core Features
-1. **Trim Video**: High-speed clipping between specified start and end times using stream copying or precise re-encoding.
-2. **Smarter Resize**: Change resolution using aspect ratio templates (16:9, 9:16, 1:1, etc.) with smart logic for **Fit (Padding)**, **Fill (Crop)**, or **Stretch**.
-3. **Audio Control**: Dedicated control to **Keep Original** (Stream Copy), **Convert to AAC** (Universal compatibility), or **Remove Audio** entirely.
-4. **Codec Conversion**: Toggle between **H.264 (AVC)** for compatibility or **H.265 (HEVC)** for maximum compression.
-5. **Format Conversion**: Instant container switching between **.mp4, .mkv, .mov, .avi**, or high-performance **Animated .gif**.
-6. **Single-Pass Engine**: All combined actions run in a single optimized FFmpeg pass to prevent quality loss and save time.
+- **ONLY USE RELATIVE PATHS** for all file operations (e.g., `read index.js`, `edit package.json`).
+- **NEVER use absolute paths.** (Absolute paths contain complex token combinations that cause system instability).
+- NEVER use `../` navigation or attempt to leave the current directory.
+- If a file read fails, STOP immediately and tell the user. Do not blindly retry or mutate the filename.
 
-## Key UX Features
-- **State-Driven Navigation**: Robust menu system allowing `Esc` to go back one step and `Ctrl+Q` to quit at any time.
-- **Dynamic Metadata**: Real-time resolution, aspect ratio, and duration display upon file selection.
-- **Natural Time Input**: Input times naturally like `1m 20s`, `8.5s`, or `1h`.
-- **Quality 1-10 Scale**: Simplified quality selection (defaults to 5 - Balanced) with real-time rough file size estimations.
-- **Drag & Drop**: Intelligent Windows path cleanup (automatic quote removal).
-- **Bootstrap Setup**: `setup.bat` handles Node.js and SVEC installation automatically via Windows `winget`.
+### File Map
+- `index.js`     — entire application, ~330 lines, single source file
+- `package.json` — version number and dependencies
+- `AGENTS.md`    — this file
+- `setup.bat`    — Windows bootstrap installer
 
-## Technologies Used
-- **Node.js**: Underlying platform.
-- **@clack/prompts**: For the modern, beautiful Terminal UI.
-- **FFmpeg & FFprobe**: The core processing engines (bundled via static binaries or used from system PATH).
+**There are no other source files. Do not invent filenames. Rely ONLY on the File Map above.**
+
+---
+
+## Sacred Rules
+
+1. **SPEED TRUMPS EVERYTHING** — every feature must be optimised for speed and minimum overhead.
+2. **NO BLOAT** — no unnecessary dependencies, no heavy processing; if a request makes SVEC slow or heavy, challenge it.
+3. **SINGLE-PASS FFMPEG** — all operations must run in a single FFmpeg pass to preserve quality and save time.
+4. **DEFAULT TO LOSSLESS** — if not specified, video ops must not re-encode; a trim must never re-encode unless the user explicitly chooses Precise mode.
+5. **LOOP PROTECTION** — if a bash command fails or gets stuck, STOP immediately and ask the user to run it manually; never retry blindly.
+6. **VERSIONING** — bump version in `package.json` before every push.
+7. **TEST BEFORE COMMIT** — run `npm test` before every backend change; if tests fail, fix first; if test file is missing, create it.
+8. **DOC SYNC** — update AGENTS.md and README.md with every functional change.
+
+---
+
+## What This App Does
+Terminal video editor (TUI) for Windows. Single source file. Wraps FFmpeg with a 
+guided step-by-step menu for: trim, resize, codec conversion, format conversion, 
+audio control. All operations combined into one FFmpeg pass.
+
+## Stack
+- Node.js + `@clack/prompts` (TUI)
+- FFmpeg + FFprobe (bundled static binaries or system PATH)
+
+## Key Logic to Never Break
+- `parseTime()` — working correctly, do not refactor.
+- FFmpeg arg construction in the `execute` step — proven logic, wrap don't rewrite.
+- The `state` step machine — fragile, edit carefully.
 
 ## Release History
-- **v1.0.7**: Polished UX, improved error handling, lossless-by-default enforcement.
-- **v1.0.6**: Formalized Core Development Principles and versioning rules.
-- **v1.0.5**: Bootstrap setup (`setup.bat`), Audio control, Aspect ratio templates, and State-driven navigation fixed.
-- **v1.0.0**: Initial Release.
+- v1.0.8: Updated agent path rules to enforce relative paths and prevent hallucination loops
+- v1.0.7: Polished UX, improved error handling, lossless-by-default enforcement
+- v1.0.6: Formalised core development principles and versioning rules
+- v1.0.5: Bootstrap setup, audio control, aspect ratio templates, state-driven navigation
+- v1.0.0: Initial release
