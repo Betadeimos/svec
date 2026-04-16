@@ -1,6 +1,7 @@
 {
+  "type": "module",
   "name": "svec",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Simplest video editor for the terminal",
   "main": "index.js",
   "bin": {
@@ -11,9 +12,17 @@
     "test": "node test_engine.js"
   },
   "dependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "@babel/preset-react": "^7.28.5",
+    "@babel/register": "^7.28.6",
     "@clack/prompts": "^0.7.0",
     "ffmpeg-static": "^5.3.0",
     "ffprobe-static": "^3.1.0",
-    "picocolors": "^1.0.0"
+    "ink": "^7.0.0",
+    "ink-select-input": "^6.2.0",
+    "ink-text-input": "^6.0.0",
+    "picocolors": "^1.0.0",
+    "react": "^19.2.5"
   }
 }

@@ -15,7 +15,7 @@
   └───────────────────────────────────────┘
 ```
 
-# SVEC (Simplest Video Editor CLI) v1.0.7 ✂️
+# SVEC (Simplest Video Editor CLI) v1.0.9 ✂️
 
 A lightweight, terminal-based video editor built for professionals and enthusiasts who need to process large video files quickly without the bloat of a GUI. SVEC focuses on speed, precision, and zero-headache workflows.
 

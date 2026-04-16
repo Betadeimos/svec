@@ -1,4 +1,4 @@
-# SVEC — Agent Instructions (v1.0.8)
+# SVEC — Agent Instructions (v1.0.9)
 
 ## ⚠️ READ THIS FIRST, EVERY TIME
 
@@ -11,10 +11,13 @@ You are already executing inside the project root directory.
 - If a file read fails, STOP immediately and tell the user. Do not blindly retry or mutate the filename.
 
 ### File Map
-- `index.js`     — entire application, ~330 lines, single source file
-- `package.json` — version number and dependencies
-- `AGENTS.md`    — this file
-- `setup.bat`    — Windows bootstrap installer
+- `index.js`        — entry point, orchestrates the TUI flow
+- `lib/binaries.js`  — FFmpeg/FFprobe path resolution and metadata
+- `lib/processor.js` — FFmpeg argument construction and execution
+- `lib/utils.js`     — shared helper functions (time parsing, etc.)
+- `package.json`    — version number and dependencies
+- `AGENTS.md`       — this file
+- `setup.bat`       — Windows bootstrap installer
 
 **There are no other source files. Do not invent filenames. Rely ONLY on the File Map above.**
 
@@ -34,7 +37,7 @@ You are already executing inside the project root directory.
 ---
 
 ## What This App Does
-Terminal video editor (TUI) for Windows. Single source file. Wraps FFmpeg with a 
+Terminal video editor (TUI) for Windows. Modular architecture. Wraps FFmpeg with a 
 guided step-by-step menu for: trim, resize, codec conversion, format conversion, 
 audio control. All operations combined into one FFmpeg pass.
 
@@ -48,6 +51,7 @@ audio control. All operations combined into one FFmpeg pass.
 - The `state` step machine — fragile, edit carefully.
 
 ## Release History
+- v1.0.9: Refactored into modular lib/ structure, pruned unused files
 - v1.0.8: Updated agent path rules to enforce relative paths and prevent hallucination loops
 - v1.0.7: Polished UX, improved error handling, lossless-by-default enforcement
 - v1.0.6: Formalised core development principles and versioning rules
