@@ -40,6 +40,11 @@ const App = () => {
   const [resizeAspectIdx, setResizeAspectIdx] = useState(0);
   const [resizeScaleIdx, setResizeScaleIdx] = useState(0);
   const [resizeResIdx, setResizeResIdx] = useState(0);
+  
+  const [selAspectIdx, setSelAspectIdx] = useState(0);
+  const [selScaleIdx, setSelScaleIdx] = useState(0);
+  const [selResIdx, setSelResIdx] = useState(0);
+  
   const [resizeCustomAspectW, setResizeCustomAspectW] = useState("16");
   const [resizeCustomAspectH, setResizeCustomAspectH] = useState("9");
   const [resizeCustomResW, setResizeCustomResW] = useState("1920");
@@ -167,7 +172,122 @@ const App = () => {
           }
           else { 
              setTrimEnd(formatT(parseT(trimEnd)));
-             setActiveField(-1); 
+             setActiveTab(2); setActiveField(0); 
+          }
+        }
+      }
+    }
+    else if (activeTab === 2) { // Resize
+      if (activeField === 0) {
+        const hasScaleMode = selAspectIdx !== 0; // Scale Mode panel only shows if selected aspect ratio is not Original
+        const getPanels = () => {
+          const p = [0];
+          if (hasScaleMode) p.push(1);
+          p.push(2);
+          return p;
+        };
+        const panels = getPanels();
+
+        if (key.upArrow || key.downArrow) {
+          const delta = key.upArrow ? -1 : 1;
+          if (resizeFocus === 'list') {
+            if (resizePanel === 0) {
+               if (key.upArrow && resizeAspectIdx === 0) setActiveField(-1);
+               else setResizeAspectIdx(Math.max(0, Math.min(5, resizeAspectIdx + delta)));
+            } else if (resizePanel === 1) {
+               if (key.upArrow && resizeScaleIdx === 0) setActiveField(-1);
+               else setResizeScaleIdx(Math.max(0, Math.min(2, resizeScaleIdx + delta)));
+            } else if (resizePanel === 2) {
+               if (key.upArrow && resizeResIdx === 0) setActiveField(-1);
+               else setResizeResIdx(Math.max(0, Math.min(4, resizeResIdx + delta)));
+            }
+          } else {
+             if (key.upArrow) setResizeFocus('list');
+          }
+        }
+        else if (key.leftArrow || key.rightArrow) {
+          if (resizeFocus === 'list') {
+             const currentIdx = panels.indexOf(resizePanel);
+             const nextIdx = Math.max(0, Math.min(panels.length - 1, currentIdx + (key.leftArrow ? -1 : 1)));
+             setResizePanel(panels[nextIdx]);
+          } else {
+             if (key.leftArrow) {
+                 if (resizeFocus === 'customH') setResizeFocus('customW');
+                 else {
+                     setResizeFocus('list');
+                     const currentIdx = panels.indexOf(resizePanel);
+                     if (currentIdx > 0) setResizePanel(panels[currentIdx - 1]);
+                 }
+             } else {
+                 if (resizeFocus === 'customW') setResizeFocus('customH');
+                 else {
+                     setResizeFocus('list');
+                     const currentIdx = panels.indexOf(resizePanel);
+                     if (currentIdx < panels.length - 1) setResizePanel(panels[currentIdx + 1]);
+                 }
+             }
+          }
+        }
+        else if (key.backspace) {
+          if (resizeFocus === 'customW') {
+             if (resizePanel === 0) setResizeCustomAspectW(p => p.slice(0, -1));
+             else if (resizePanel === 2) setResizeCustomResW(p => p.slice(0, -1));
+          } else if (resizeFocus === 'customH') {
+             if (resizePanel === 0) setResizeCustomAspectH(p => p.slice(0, -1));
+             else if (resizePanel === 2) setResizeCustomResH(p => p.slice(0, -1));
+          }
+        }
+        else if (input && !key.ctrl && !key.meta && /^\d$/.test(input)) {
+          if (resizeFocus === 'customW') {
+             if (resizePanel === 0) setResizeCustomAspectW(p => p + input);
+             else if (resizePanel === 2) setResizeCustomResW(p => p + input);
+          } else if (resizeFocus === 'customH') {
+             if (resizePanel === 0) setResizeCustomAspectH(p => p + input);
+             else if (resizePanel === 2) setResizeCustomResH(p => p + input);
+          }
+        }
+        else if (key.return) {
+          if (resizeFocus === 'list') {
+            if (resizePanel === 0) {
+               setSelAspectIdx(resizeAspectIdx);
+               if (resizeAspectIdx === 5) setResizeFocus('customW');
+               else {
+                   const newHasScaleMode = resizeAspectIdx !== 0;
+                   const newPanels = [0];
+                   if (newHasScaleMode) newPanels.push(1);
+                   newPanels.push(2);
+                   const pnlIdx = newPanels.indexOf(0);
+                   if (pnlIdx < newPanels.length - 1) setResizePanel(newPanels[pnlIdx + 1]);
+                   else { setActiveTab(3); setActiveField(0); }
+               }
+            } else if (resizePanel === 1) {
+               setSelScaleIdx(resizeScaleIdx);
+               const pnlIdx = panels.indexOf(1);
+               if (pnlIdx < panels.length - 1) setResizePanel(panels[pnlIdx + 1]);
+               else { setActiveTab(3); setActiveField(0); }
+            } else if (resizePanel === 2) {
+               setSelResIdx(resizeResIdx);
+               if (resizeResIdx === 4) setResizeFocus('customW');
+               else {
+                   const pnlIdx = panels.indexOf(2);
+                   if (pnlIdx < panels.length - 1) setResizePanel(panels[pnlIdx + 1]);
+                   else { setActiveTab(3); setActiveField(0); }
+               }
+            }
+          } else {
+             if (resizeFocus === 'customW') {
+                setResizeFocus('customH');
+             } else {
+                setResizeFocus('list');
+                const newPanels = [0];
+                if (resizePanel === 0) {
+                    if (resizeAspectIdx !== 0) newPanels.push(1);
+                    newPanels.push(2);
+                } else newPanels.push(...panels.slice(1));
+                const pnlIdx = newPanels.indexOf(resizePanel);
+                if (pnlIdx !== -1 && pnlIdx < newPanels.length - 1) setResizePanel(newPanels[pnlIdx + 1]);
+                else { setActiveTab(3); setActiveField(0); }
+             }
           }
         }
       }
@@ -226,8 +346,122 @@ const App = () => {
     )
   );
 
+  const renderResizeView = () => {
+    const aspectOptions = ['Original', '16:9', '9:16', '1:1', '4:3', 'Custom'];
+    const scaleOptions = ['Fit (letterbox)', 'Fill (crop)', 'Stretch'];
+    const resOptions = ['Original', '720p', '1080p', '4K', 'Custom'];
+    
+    // Live preview strings based on HOVER
+    const aspectStr = resizeAspectIdx === 0 ? "Original" : 
+                      (resizeAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : aspectOptions[resizeAspectIdx]);
+    const resStr = resizeResIdx === 0 ? "Original" :
+                   (resizeResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : resOptions[resizeResIdx]);
+
+    const hasScaleMode = selAspectIdx !== 0;
+
+    // Dynamic Preview Box Size Calculation
+    let targetRatio = 16 / 9;
+    let ratioStr = "16:9";
+    if (resizeAspectIdx === 0) ratioStr = currentFile.ratio || "16:9";
+    else if (resizeAspectIdx === 1) ratioStr = "16:9";
+    else if (resizeAspectIdx === 2) ratioStr = "9:16";
+    else if (resizeAspectIdx === 3) ratioStr = "1:1";
+    else if (resizeAspectIdx === 4) ratioStr = "4:3";
+    else if (resizeAspectIdx === 5) ratioStr = `${resizeCustomAspectW || 16}:${resizeCustomAspectH || 9}`;
+
+    const parts = ratioStr.split(':').map(Number);
+    if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
+       targetRatio = parts[0] / parts[1];
+    }
+    
+    // Terminal characters are ~ 1:2 physical aspect ratio
+    // Box dimensions in terminal chars: width=cols, height=rows
+    // Physical Ratio = cols / (rows * 2) => cols = Ratio * rows * 2
+    const maxCols = 26;
+    const maxRows = 10;
+    
+    let previewW = Math.round(targetRatio * maxRows * 2);
+    let previewH = maxRows;
+    
+    if (previewW > maxCols) {
+        previewW = maxCols;
+        previewH = Math.round(maxCols / (targetRatio * 2));
+    }
+    
+    previewW = Math.max(12, previewW);
+    previewH = Math.max(4, previewH);
+
+    return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "row", paddingX: 1, gap: 1 },
+      // Preview panel (left)
+      React.createElement(Box, { width: 30, borderStyle: "single", borderColor: "gray", flexDirection: "column", alignItems: "center", justifyContent: "center" },
+         React.createElement(Box, { borderStyle: "round", borderColor: PRIMARY_COLOR, width: previewW, height: previewH, flexDirection: "column", alignItems: "center", justifyContent: "center" },
+            React.createElement(Text, { color: PRIMARY_COLOR, bold: true }, aspectStr),
+            React.createElement(Text, { color: "gray" }, resStr)
+         )
+      ),
+      // Controls panel
+      React.createElement(Box, { flexGrow: 1, flexDirection: "row", gap: 1 },
+         // Aspect Ratio
+         React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 0) ? PRIMARY_COLOR : "gray", flexDirection: "column", overflow: "hidden" },
+            React.createElement(Box, { paddingX: 1, borderBottom: false }, React.createElement(Text, { color: "gray" }, "ASPECT RATIO")),
+            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
+               aspectOptions.map((opt, i) => {
+                  const isSelected = selAspectIdx === i;
+                  const isHovered = resizeAspectIdx === i;
+                  const isFocused = (activeField === 0 && resizePanel === 0 && resizeFocus === 'list' && isHovered);
+                  return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (isSelected ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
+               })
+            ),
+            resizeAspectIdx === 5 ? React.createElement(Box, { paddingX: 1, marginBottom: 0, flexDirection: "row", gap: 1 },
+               React.createElement(Box, { borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 0 && resizeFocus === 'customW') ? PRIMARY_COLOR : "gray", paddingX: 1 },
+                  React.createElement(Text, { color: (activeField === 0 && resizePanel === 0 && resizeFocus === 'customW') ? PRIMARY_COLOR : "white" }, (resizeCustomAspectW || " ") + (activeField === 0 && resizePanel === 0 && resizeFocus === 'customW' ? "_" : ""))
+               ),
+               React.createElement(Box, { justifyContent: "center", alignItems: "center" }, React.createElement(Text, { color: "gray" }, "x")),
+               React.createElement(Box, { borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 0 && resizeFocus === 'customH') ? PRIMARY_COLOR : "gray", paddingX: 1 },
+                  React.createElement(Text, { color: (activeField === 0 && resizePanel === 0 && resizeFocus === 'customH') ? PRIMARY_COLOR : "white" }, (resizeCustomAspectH || " ") + (activeField === 0 && resizePanel === 0 && resizeFocus === 'customH' ? "_" : ""))
+               )
+            ) : React.createElement(Box, { height: 3 })
+         ),
+         // Scale Mode (conditional)
+         hasScaleMode && React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 1) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
+            React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "SCALE MODE")),
+            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
+               scaleOptions.map((opt, i) => {
+                  const isSelected = selScaleIdx === i;
+                  const isHovered = resizeScaleIdx === i;
+                  const isFocused = (activeField === 0 && resizePanel === 1 && isHovered);
+                  return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (isSelected ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
+               })
+            )
+         ),
+         // Resolution
+         React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 2) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
+            React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "RESOLUTION")),
+            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
+               resOptions.map((opt, i) => {
+                  const isSelected = selResIdx === i;
+                  const isHovered = resizeResIdx === i;
+                  const isFocused = (activeField === 0 && resizePanel === 2 && resizeFocus === 'list' && isHovered);
+                  return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (isSelected ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
+               })
+            ),
+            resizeResIdx === 4 ? React.createElement(Box, { paddingX: 1, marginBottom: 0, flexDirection: "row", gap: 1 },
+               React.createElement(Box, { borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 2 && resizeFocus === 'customW') ? PRIMARY_COLOR : "gray", paddingX: 1 },
+                  React.createElement(Text, { color: (activeField === 0 && resizePanel === 2 && resizeFocus === 'customW') ? PRIMARY_COLOR : "white" }, (resizeCustomResW || " ") + (activeField === 0 && resizePanel === 2 && resizeFocus === 'customW' ? "_" : ""))
+               ),
+               React.createElement(Box, { justifyContent: "center", alignItems: "center" }, React.createElement(Text, { color: "gray" }, "x")),
+               React.createElement(Box, { borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 2 && resizeFocus === 'customH') ? PRIMARY_COLOR : "gray", paddingX: 1 },
+                  React.createElement(Text, { color: (activeField === 0 && resizePanel === 2 && resizeFocus === 'customH') ? PRIMARY_COLOR : "white" }, (resizeCustomResH || " ") + (activeField === 0 && resizePanel === 2 && resizeFocus === 'customH' ? "_" : ""))
+               )
+            ) : React.createElement(Box, { height: 3 })
+         )
+      )
+    );
+  };
+
   const renderActiveView = () => {
     if (activeTab === 0) return renderFilesView();
+    if (activeTab === 2) return renderResizeView();
     if (activeTab === 1) {
         const parseT = (t) => { 
           if (!t) return 0;
