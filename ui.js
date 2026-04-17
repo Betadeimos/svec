@@ -52,6 +52,23 @@ const App = () => {
   const [resizePanel, setResizePanel] = useState(0);
   const [resizeFocus, setResizeFocus] = useState('list');
   
+  // Format State
+  const [formatIdx, setFormatIdx] = useState(0);
+  const [codecIdx, setCodecIdx] = useState(0);
+  const [audioIdx, setAudioIdx] = useState(0);
+  const [qualityIdx, setQualityIdx] = useState(4); // 1-10 mapped to index 0-9
+  
+  const [selFormatIdx, setSelFormatIdx] = useState(0);
+  const [selCodecIdx, setSelCodecIdx] = useState(0);
+  const [selAudioIdx, setSelAudioIdx] = useState(0);
+  const [selQualityIdx, setSelQualityIdx] = useState(4);
+  
+  const [formatPanel, setFormatPanel] = useState(0);
+  
+  // Export State
+  const [exportPhase, setExportPhase] = useState('ready'); // 'ready', 'exporting', 'done'
+  const [exportProgress, setExportProgress] = useState(0);
+  
   const [size, setSize] = useState({
     columns: process.stdout.columns || 80,
     rows: (process.stdout.rows || 24) - 1,
@@ -292,6 +309,86 @@ const App = () => {
         }
       }
     }
+    else if (activeTab === 3) { // Format
+      if (activeField === 0) {
+        const panels = [0, 1, 2, 3];
+        if (key.upArrow || key.downArrow) {
+          const delta = key.upArrow ? -1 : 1;
+          if (formatPanel === 0) {
+             if (key.upArrow && formatIdx === 0) setActiveField(-1);
+             else setFormatIdx(Math.max(0, Math.min(5, formatIdx + delta)));
+          } else if (formatPanel === 1) {
+             if (key.upArrow && codecIdx === 0) setActiveField(-1);
+             else setCodecIdx(Math.max(0, Math.min(5, codecIdx + delta)));
+          } else if (formatPanel === 2) {
+             if (key.upArrow && audioIdx === 0) setActiveField(-1);
+             else setAudioIdx(Math.max(0, Math.min(2, audioIdx + delta)));
+          } else if (formatPanel === 3) {
+             if (key.upArrow) setFormatPanel(2);
+          }
+        }
+        else if (key.leftArrow || key.rightArrow) {
+           if (formatPanel === 3 && (key.leftArrow || key.rightArrow)) {
+              if (key.leftArrow) setQualityIdx(Math.max(0, qualityIdx - 1));
+              else setQualityIdx(Math.min(9, qualityIdx + 1));
+           } else {
+              const currentIdx = panels.indexOf(formatPanel);
+              const nextIdx = Math.max(0, Math.min(panels.length - 1, currentIdx + (key.leftArrow ? -1 : 1)));
+              setFormatPanel(panels[nextIdx]);
+           }
+        }
+        else if (input && !key.ctrl && !key.meta && /^\d$/.test(input) && formatPanel === 3) {
+            const num = Number(input);
+            if (num === 0) setQualityIdx(9);
+            else setQualityIdx(num - 1);
+        }
+        else if (key.return) {
+          if (formatPanel === 0) {
+             setSelFormatIdx(formatIdx);
+             setFormatPanel(1);
+          } else if (formatPanel === 1) {
+             setSelCodecIdx(codecIdx);
+             setFormatPanel(2);
+          } else if (formatPanel === 2) {
+             setSelAudioIdx(audioIdx);
+             setFormatPanel(3);
+          } else if (formatPanel === 3) {
+             setSelQualityIdx(qualityIdx);
+             setActiveTab(4); setActiveField(0);
+          }
+        }
+      }
+    }
+    else if (activeTab === 4) { // Export
+      if (activeField === 0) {
+         if (key.upArrow) setActiveField(-1);
+         else if (key.return && exportPhase === 'ready') {
+            setExportPhase('exporting');
+            // Fake export progress simulation
+            let p = 0;
+            const interval = setInterval(() => {
+               p += Math.random() * 10 + 5;
+               if (p >= 100) {
+                  setExportProgress(100);
+                  setExportPhase('done');
+                  clearInterval(interval);
+               } else {
+                  setExportProgress(p);
+               }
+            }, 300);
+         }
+         else if (key.return && exportPhase === 'done') {
+             // Reset state entirely and go to files
+             setExportPhase('ready');
+             setExportProgress(0);
+             setActiveTab(0);
+             setActiveField(0);
+         }
+         else if (exportPhase === 'done' && (input === 'q' || input === 'Q')) {
+             exit();
+         }
+      }
+    }
   });
 
   const renderFilesView = () => (
@@ -459,9 +556,134 @@ const App = () => {
     );
   };
 
+  const renderFormatView = () => {
+    const formatOptions = ['Keep original', '.mp4', '.mov', '.webm', '.mkv', '.avi'];
+    const codecOptions = ['Keep original', 'H.264', 'H.265 (HEVC)', 'ProRes', 'VP9', 'AV1'];
+    const audioOptions = ['Keep original', 'Convert to AAC', 'Remove audio'];
+
+    return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "row", paddingX: 1, gap: 1 },
+      // Format Panel
+      React.createElement(Box, { width: "33%", flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 0) ? PRIMARY_COLOR : "gray", flexDirection: "column", overflow: "hidden" },
+         React.createElement(Box, { paddingX: 1, borderBottom: false }, React.createElement(Text, { color: "gray" }, "FORMAT")),
+         React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
+            formatOptions.map((opt, i) => {
+               const isSelected = selFormatIdx === i;
+               const isHovered = formatIdx === i;
+               const isFocused = (activeField === 0 && formatPanel === 0 && isHovered);
+               return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (isSelected ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
+            })
+         )
+      ),
+      // Video Codec Panel
+      React.createElement(Box, { width: "33%", flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 1) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
+         React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "VIDEO CODEC")),
+         React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
+            codecOptions.map((opt, i) => {
+               const isSelected = selCodecIdx === i;
+               const isHovered = codecIdx === i;
+               const isFocused = (activeField === 0 && formatPanel === 1 && isHovered);
+               return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (isSelected ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
+            })
+         )
+      ),
+      // Audio & Quality Panel
+      React.createElement(Box, { width: "33%", flexGrow: 1, flexDirection: "column" },
+         React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 2) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
+            React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "AUDIO")),
+            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
+               audioOptions.map((opt, i) => {
+                  const isSelected = selAudioIdx === i;
+                  const isHovered = audioIdx === i;
+                  const isFocused = (activeField === 0 && formatPanel === 2 && isHovered);
+                  return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (isSelected ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
+               })
+            )
+         ),
+         React.createElement(Box, { height: 5, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 3) ? PRIMARY_COLOR : "gray", flexDirection: "column", flexShrink: 0, justifyContent: "center" },
+            React.createElement(Box, { paddingX: 1, flexDirection: "row", justifyContent: "space-between" }, 
+               React.createElement(Text, { color: "gray" }, "QUALITY"),
+               React.createElement(Text, { color: (activeField === 0 && formatPanel === 3) ? PRIMARY_COLOR : "white" }, `${(activeField === 0 && formatPanel === 3 ? qualityIdx : selQualityIdx) + 1}`)
+            ),
+            React.createElement(Box, { flexDirection: "row", paddingX: 1, marginTop: 1, justifyContent: "space-between" },
+               React.createElement(Text, { color: "gray" }, "1"),
+               React.createElement(Box, { flexDirection: "row", flexGrow: 1, justifyContent: "center" },
+                  React.createElement(Text, null,
+                     Array.from({ length: 10 }).map((_, i) => {
+                        const isActive = i <= (activeField === 0 && formatPanel === 3 ? qualityIdx : selQualityIdx);
+                        const isHighlight = activeField === 0 && formatPanel === 3;
+                        return React.createElement(Text, { key: i, color: isActive ? (isHighlight ? PRIMARY_COLOR : "white") : "gray", dimColor: !isActive }, i < 9 ? "█ " : "█");
+                     })
+                  )
+               ),
+               React.createElement(Text, { color: "gray" }, "10")
+            )
+         )
+      )
+    );
+  };
+
+  const renderExportView = () => {
+     const formatStr = selFormatIdx === 0 ? "Original" : ['.mp4', '.mov', '.webm', '.mkv', '.avi'][selFormatIdx - 1];
+     const codecStr = selCodecIdx === 0 ? "Copy" : ['H.264', 'H.265 (HEVC)', 'ProRes', 'VP9', 'AV1'][selCodecIdx - 1];
+     const audioStr = selAudioIdx === 0 ? "Keep" : (selAudioIdx === 1 ? "Convert (AAC)" : "Remove");
+     
+     const aspectOptions = ['Original', '16:9', '9:16', '1:1', '4:3', 'Custom'];
+     const scaleOptions = ['Fit (letterbox)', 'Fill (crop)', 'Stretch'];
+     const resOptions = ['Original', '720p', '1080p', '4K', 'Custom'];
+
+     const aspectStrFinal = selAspectIdx === 0 ? "Original" : 
+                       (selAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : aspectOptions[selAspectIdx]);
+     const scaleStrFinal = selAspectIdx === 0 ? "-" : scaleOptions[selScaleIdx];
+     const resStrFinal = selResIdx === 0 ? "Original" :
+                    (selResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : resOptions[selResIdx]);
+     
+     const barWidth = Math.max(20, Math.min(80, size.columns - 10));
+     const filledBars = Math.floor((exportProgress / 100) * barWidth);
+     const emptyBars = barWidth - filledBars;
+
+     return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "column", paddingX: 1, justifyContent: "center" },
+        React.createElement(Box, { borderStyle: "single", borderColor: "gray", flexDirection: "column", paddingX: 2, paddingY: 1, marginBottom: 1 },
+           React.createElement(Box, { width: "100%", justifyContent: "space-between", flexDirection: "row" },
+               React.createElement(Box, { flexDirection: "column" },
+                  React.createElement(Text, { color: "gray" }, `Input: `, React.createElement(Text, { color: "white", bold: true }, currentFile.name)),
+                  React.createElement(Text, { color: "gray" }, `Trim: `, React.createElement(Text, { color: "white" }, `${trimStart} - ${trimEnd}`)),
+                  React.createElement(Text, { color: "gray" }, `Format: `, React.createElement(Text, { color: "white" }, formatStr))
+               ),
+               React.createElement(Box, { flexDirection: "column" },
+                  React.createElement(Text, { color: "gray" }, `Aspect: `, React.createElement(Text, { color: "white" }, aspectStrFinal)),
+                  React.createElement(Text, { color: "gray" }, `Scale: `, React.createElement(Text, { color: "white" }, scaleStrFinal)),
+                  React.createElement(Text, { color: "gray" }, `Res: `, React.createElement(Text, { color: "white" }, resStrFinal))
+               ),
+               React.createElement(Box, { flexDirection: "column" },
+                  React.createElement(Text, { color: "gray" }, `Codec: `, React.createElement(Text, { color: "white" }, codecStr)),
+                  React.createElement(Text, { color: "gray" }, `Quality: `, React.createElement(Text, { color: "white" }, `${selQualityIdx + 1}/10`)),
+                  React.createElement(Text, { color: "gray" }, `Audio: `, React.createElement(Text, { color: "white" }, audioStr))
+               )
+           )
+        ),
+        exportPhase === 'ready' && React.createElement(Box, { borderStyle: "single", borderColor: activeField === 0 ? PRIMARY_COLOR : "gray", justifyContent: "center", paddingY: 1 },
+           React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "gray", bold: true }, "[ Press Enter to Start Export ]")
+        ),
+        exportPhase === 'exporting' && React.createElement(Box, { borderStyle: "single", borderColor: PRIMARY_COLOR, flexDirection: "column", justifyContent: "center", paddingY: 1, paddingX: 2 },
+           React.createElement(Box, { justifyContent: "space-between", marginBottom: 1 },
+              React.createElement(Text, { color: "cyan" }, "Processing..."),
+              React.createElement(Text, { color: "white" }, `${Math.floor(exportProgress)}%`)
+           ),
+           React.createElement(Text, { color: PRIMARY_COLOR }, "█".repeat(filledBars) + "─".repeat(emptyBars))
+        ),
+        exportPhase === 'done' && React.createElement(Box, { borderStyle: "single", borderColor: "green", flexDirection: "column", justifyContent: "center", alignItems: "center", paddingY: 1, paddingX: 2 },
+           React.createElement(Text, { color: "green", bold: true }, "Export Complete!"),
+           React.createElement(Text, { color: "gray", marginTop: 1 }, "Thank you for using SVEC."),
+           React.createElement(Text, { color: "white", marginTop: 1 }, "[Enter] Start New Conversion • [Q] Quit")
+        )
+     );
+  };
+
   const renderActiveView = () => {
     if (activeTab === 0) return renderFilesView();
     if (activeTab === 2) return renderResizeView();
+    if (activeTab === 3) return renderFormatView();
+    if (activeTab === 4) return renderExportView();
     if (activeTab === 1) {
         const parseT = (t) => { 
           if (!t) return 0;
