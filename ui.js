@@ -36,6 +36,17 @@ const App = () => {
   const [trimEnd, setTrimEnd] = useState("05:30");
   const [outputPathIndex, setOutputPathIndex] = useState(0);
   
+  // Resize State
+  const [resizeAspectIdx, setResizeAspectIdx] = useState(0);
+  const [resizeScaleIdx, setResizeScaleIdx] = useState(0);
+  const [resizeResIdx, setResizeResIdx] = useState(0);
+  const [resizeCustomAspectW, setResizeCustomAspectW] = useState("16");
+  const [resizeCustomAspectH, setResizeCustomAspectH] = useState("9");
+  const [resizeCustomResW, setResizeCustomResW] = useState("1920");
+  const [resizeCustomResH, setResizeCustomResH] = useState("1080");
+  const [resizePanel, setResizePanel] = useState(0);
+  const [resizeFocus, setResizeFocus] = useState('list');
+  
   const [size, setSize] = useState({
     columns: process.stdout.columns || 80,
     rows: (process.stdout.rows || 24) - 1,
