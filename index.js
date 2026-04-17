@@ -10,12 +10,32 @@ const { setupFFmpeg, getMetadata, getFFmpegPath, getFFprobePath } = require('./l
 const { parseTime } = require('./lib/utils');
 const { executeFFmpeg } = require('./lib/processor');
 
-// Global key listener for shortcuts
-process.stdin.on('data', (data) => {
-    if (data[0] === 17) { // Ctrl+Q
-        process.exit(0);
+// Global input interceptor to map Shift+Tab to Ctrl+C (which Clack treats as 'cancel/back')
+const originalEmit = process.stdin.emit;
+process.stdin.emit = function (event, ...args) {
+    if (event === 'keypress') {
+        const key = args[1];
+        if (key) {
+            // Ctrl+Q to quit entirely
+            if (key.ctrl && key.name === 'q') process.exit(0);
+            
+            // Map Shift+Tab to Ctrl+C (\x03) so Clack cancels the prompt and goes back
+            if (key.name === 'tab' && key.shift) {
+                return originalEmit.call(this, 'keypress', '\x03', { 
+                    sequence: '\x03',
+                    name: 'c', 
+                    ctrl: true, 
+                    meta: false, 
+                    shift: false 
+                });
+            }
+        }
     }
-});
+    return originalEmit.apply(this, [event, ...args]);
+};
+
+// Start readline to enable keypress emitting for our interceptor
+require('readline').emitKeypressEvents(process.stdin);
 
 async function promptStep(p) {
     const res = await p;
@@ -37,7 +57,7 @@ async function main() {
   └───────────────────────────────────────┘`));
     console.log(`  ${pc.cyan('SVEC')} ${pc.dim('•')} ${pc.gray('Simplest Video Editor CLI')} ${pc.dim('•')} ${pc.cyan('v' + version)}`);
     console.log(pc.dim('  ─────────────────────────────────────────'));
-    console.log(pc.dim('  Shortcuts: [Ctrl+Q] Quit\n'));
+    console.log(pc.dim('  Shortcuts: [Ctrl+Q] Quit | [Ctrl+R] Reload\n'));
 
     await setupFFmpeg();
 

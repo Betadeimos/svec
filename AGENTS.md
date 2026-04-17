@@ -1,4 +1,4 @@
-# SVEC — Agent Instructions (v1.0.9)
+# SVEC — Agent Instructions (v1.1.1)
 
 ## ⚠️ READ THIS FIRST, EVERY TIME
 
@@ -51,6 +51,8 @@ audio control. All operations combined into one FFmpeg pass.
 - The `state` step machine — fragile, edit carefully.
 
 ## Release History
+- v1.1.1: Fixed Shift+Tab not navigating back in TUI menus
+- v1.1.0: Added quality selection with size estimates for re-encoding
 - v1.0.9: Refactored into modular lib/ structure, pruned unused files
 - v1.0.8: Updated agent path rules to enforce relative paths and prevent hallucination loops
 - v1.0.7: Polished UX, improved error handling, lossless-by-default enforcement
