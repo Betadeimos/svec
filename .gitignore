@@ -12,3 +12,6 @@ ffprobe.exe
 *.avi
 "test video/"
 "test_video/"
+
+.gemini/
+gha-creds-*.json
