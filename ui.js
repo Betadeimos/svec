@@ -22,6 +22,21 @@ const mockFiles = [
 const outputOptions = ["Same as input", "Custom path..."];
 const PRIMARY_COLOR = '#00DFFF';
 
+const handleTrimExecution = async (fileName, startTime, endTime) => {
+  const { setupFFmpeg, getFFmpegPath } = require('./lib/binaries.js');
+  const { executeFFmpeg } = require('./lib/processor.js');
+  const path = require('path');
+  
+  await setupFFmpeg();
+  const config = {
+    videoPath: path.resolve(process.cwd(), fileName),
+    actions: ['trim'],
+    trim: { start: startTime, end: endTime },
+    targetExt: path.extname(fileName) || '.mp4'
+  };
+  await executeFFmpeg(config, getFFmpegPath());
+};
+
 const App = () => {
   const { exit } = useApp();
   const [activeTab, setActiveTab] = useState(0);
@@ -35,6 +50,9 @@ const App = () => {
   const [trimStart, setTrimStart] = useState("00:00");
   const [trimEnd, setTrimEnd] = useState("05:30");
   const [outputPathIndex, setOutputPathIndex] = useState(0);
+  
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState(null);
   
   // Resize State
   const [resizeAspectIdx, setResizeAspectIdx] = useState(0);
@@ -96,6 +114,7 @@ const App = () => {
 
   useInput((input, key) => {
     if (key.escape) return exit();
+    if (isProcessing) return; // Prevent input while processing
 
     if (activeField === -1) {
       if (key.rightArrow) setActiveTab(prev => (prev === TABS.length - 1 ? 0 : prev + 1));
@@ -148,6 +167,10 @@ const App = () => {
     }
 
     else if (activeTab === 1) { // Trim
+      if (error && key.return) {
+         setError(null);
+         return;
+      }
       if (activeField === 0 || activeField === 1) {
         if (key.upArrow) {
           if (activeField === 1) setActiveField(0);
@@ -189,7 +212,19 @@ const App = () => {
           }
           else { 
              setTrimEnd(formatT(parseT(trimEnd)));
-             setActiveTab(2); setActiveField(0); 
+             const execute = async () => {
+                 setIsProcessing(true);
+                 setError(null);
+                 try {
+                     await handleTrimExecution(chosenFileName, trimStart, trimEnd);
+                     setIsProcessing(false);
+                     setActiveTab(2); setActiveField(0); 
+                 } catch (err) {
+                     setIsProcessing(false);
+                     setError(err.message || "Execution failed");
+                 }
+             };
+             execute();
           }
         }
       }
@@ -740,14 +775,27 @@ const App = () => {
                 React.createElement(Text, { color: "gray" }, `Selection: ${Math.max(0, Math.round(endPct - startPct))}%`)
               ),
               
-              React.createElement(Box, { gap: 8, justifyContent: "center", alignItems: "center", marginTop: isTall ? 1 : 0 },
-                React.createElement(Box, { borderStyle: "single", borderColor: activeField === 0 ? PRIMARY_COLOR : "gray", paddingX: 2 },
-                  React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "gray" }, "Start Time: "),
-                  React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "white", bold: activeField === 0 }, trimStart + (activeField === 0 ? "_" : ""))
-                ),
-                React.createElement(Box, { borderStyle: "single", borderColor: activeField === 1 ? PRIMARY_COLOR : "gray", paddingX: 2 },
-                  React.createElement(Text, { color: activeField === 1 ? PRIMARY_COLOR : "gray" }, "End Time: "),
-                  React.createElement(Text, { color: activeField === 1 ? PRIMARY_COLOR : "white", bold: activeField === 1 }, trimEnd + (activeField === 1 ? "_" : ""))
+              React.createElement(Box, { height: 3, marginTop: isTall ? 1 : 0, justifyContent: "center", alignItems: "center" },
+                isProcessing ? (
+                  React.createElement(Box, { borderStyle: "single", borderColor: "cyan", paddingX: 2 },
+                    React.createElement(Text, { color: "cyan" }, "Processing video... Please wait.")
+                  )
+                ) : error ? (
+                  React.createElement(Box, { borderStyle: "single", borderColor: "red", paddingX: 2, flexDirection: "row", gap: 2 },
+                    React.createElement(Text, { color: "red" }, `Error: ${error.length > 50 ? error.slice(0, 47) + "..." : error}`),
+                    React.createElement(Text, { color: "gray" }, "[Enter] to clear")
+                  )
+                ) : (
+                  React.createElement(Box, { gap: 8, justifyContent: "center", alignItems: "center" },
+                    React.createElement(Box, { borderStyle: "single", borderColor: activeField === 0 ? PRIMARY_COLOR : "gray", paddingX: 2 },
+                      React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "gray" }, "Start Time: "),
+                      React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "white", bold: activeField === 0 }, trimStart)
+                    ),
+                    React.createElement(Box, { borderStyle: "single", borderColor: activeField === 1 ? PRIMARY_COLOR : "gray", paddingX: 2 },
+                      React.createElement(Text, { color: activeField === 1 ? PRIMARY_COLOR : "gray" }, "End Time: "),
+                      React.createElement(Text, { color: activeField === 1 ? PRIMARY_COLOR : "white", bold: activeField === 1 }, trimEnd)
+                    )
+                  )
                 )
               )
             ),
