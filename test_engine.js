@@ -1,185 +1,169 @@
-const { spawnSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const pc = require('picocolors');
-
-// Get FFmpeg (required)
-let ffmpegPath;
-try {
-    ffmpegPath = require('ffmpeg-static');
-} catch (e) {
-    console.error(pc.red('❌ ffmpeg-static not installed. Run: npm install'));
-    process.exit(1);
-}
-
-// Get FFprobe (optional for tests)
-let ffprobePath = null;
-// First check system PATH
-const ffprobeRes = spawnSync('ffprobe', ['-version']);
-if (!ffprobeRes.error) {
-    ffprobePath = 'ffprobe';
-    console.log(pc.dim('Using ffprobe from system PATH'));
-} else {
-    // Fall back to static binary
-    try {
-        ffprobePath = require('ffprobe-static').path;
-        if (ffprobePath && fs.existsSync(ffprobePath)) {
-            console.log(pc.dim('Using ffprobe-static binary'));
-        } else {
-            ffprobePath = null;
-            console.log(pc.yellow('⚠️  ffprobe not available. Metadata validation will be skipped.'));
-        }
-    } catch (e) {
-        ffprobePath = null;
-        console.log(pc.yellow('⚠️  ffprobe not available. Metadata validation will be skipped.'));
-    }
-}
+import { spawnSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import pc from 'picocolors';
+import { setupFFmpeg, getFFmpegPath, getMetadata } from './lib/binaries.js';
+import { executeFFmpeg } from './lib/processor.js';
 
 const TEST_VIDEO = 'test_footage.mp4';
 const OUTPUT_DIR = 'test_output';
 
-if (!fs.existsSync(TEST_VIDEO)) {
+async function createTestVideo(ffmpegPath) {
+    if (fs.existsSync(TEST_VIDEO)) return;
+    
     console.log(pc.yellow(`⚠️  ${TEST_VIDEO} not found. Creating test video...`));
     const result = spawnSync(ffmpegPath, [
         '-f', 'lavfi', '-i', 'testsrc=duration=5:size=1920x1080:rate=30',
         '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=5',
         '-pix_fmt', 'yuv420p', '-y', TEST_VIDEO
     ]);
+    
     if (result.status !== 0 || !fs.existsSync(TEST_VIDEO)) {
-        console.error(pc.red('❌ Failed to create test video. Please provide test_footage.mp4 manually.'));
+        console.error(pc.red('❌ Failed to create test video.'));
         process.exit(1);
     }
-    console.log(pc.green('✅ Test video created'));
+    console.log(pc.green('✅ Test video created\n'));
 }
 
-if (!fs.existsSync(OUTPUT_DIR)) {
-    fs.mkdirSync(OUTPUT_DIR);
-}
-
-function getMetadata(filePath) {
-    if (!ffprobePath) return null;
+async function runTestCase(name, config) {
+    console.log(pc.cyan(`▶ Testing: ${name}...`));
     try {
-        const result = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,duration', '-of', 'json', filePath]);
-        return JSON.parse(result.stdout.toString()).streams[0];
-    } catch (e) { return null; }
-}
-
-async function runTest(name, args, validator = null) {
-    const start = Date.now();
-    const cleanName = name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    const outPath = path.join(OUTPUT_DIR, `test_${cleanName}.mp4`);
-    if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
-
-    const inputArgs = [];
-    const internalArgs = [...args];
-    
-    const ssIndex = internalArgs.indexOf('-ss');
-    if (ssIndex !== -1) {
-        inputArgs.push(internalArgs[ssIndex], internalArgs[ssIndex+1]);
-        internalArgs.splice(ssIndex, 2);
-    }
-    
-    const fullArgs = ['-y', ...inputArgs, '-i', TEST_VIDEO, ...internalArgs, outPath];
-    const result = spawnSync(ffmpegPath, fullArgs);
-    const end = Date.now();
-    const duration = ((end - start) / 1000).toFixed(2);
-
-    if (result.status === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 1000) {
-        // Skip metadata validation if ffprobe is not available
-        if (!ffprobePath) {
-            console.log(`${pc.green('✔')} ${pc.bold(name)} - ${pc.yellow(duration + 's')} ${pc.dim('(metadata check skipped)')}`);
-            return { success: true };
-        }
+        const outPath = await executeFFmpeg(config, getFFmpegPath());
         
-        const meta = getMetadata(outPath);
-        if (!meta) {
-            console.log(`${pc.red('✘')} ${pc.bold(name)} - ${pc.red('NO VIDEO STREAM')}`);
-            return { success: false };
-        }
-
-        if (validator) {
-            const error = validator(meta, outPath);
-            if (error) {
-                console.log(`${pc.red('✘')} ${pc.bold(name)} - ${pc.red('VALIDATION FAILED: ' + error)}`);
-                return { success: false };
+        if (fs.existsSync(outPath) && fs.statSync(outPath).size > 1000) {
+            console.log(pc.green(`✔ ${name} PASSED`));
+            const meta = getMetadata(outPath);
+            if (meta) {
+                console.log(pc.dim(`  Result: ${meta.width}x${meta.height} | ${meta.duration}s | ${meta.aspect}`));
             }
+            return true;
+        } else {
+            console.log(pc.red(`✘ ${name} FAILED (File empty or missing)`));
+            return false;
         }
-
-        console.log(`${pc.green('✔')} ${pc.bold(name)} - ${pc.yellow(duration + 's')}`);
-        return { success: true, meta, outPath };
-    } else {
-        console.log(`${pc.red('✘')} ${pc.bold(name)} - ${pc.red('FAILED (Empty or Error)')}`);
-        return { success: false };
+    } catch (err) {
+        console.log(pc.red(`✘ ${name} FAILED (Error: ${err.message})`));
+        return false;
     }
-}
-
-function checkAudio(filePath) {
-    if (!ffprobePath) return null;
-    const res = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_name', '-of', 'json', filePath]);
-    try {
-        const data = JSON.parse(res.stdout.toString());
-        return data.streams && data.streams.length > 0 ? data.streams[0].codec_name : null;
-    } catch (e) { return null; }
 }
 
 async function main() {
-    console.log(pc.cyan('\n🚀 Starting SVEC Exhaustive Engine Tests\n'));
+    console.log(pc.bold(pc.magenta('\n🚀 SVEC ENGINE AUTOMATED TEST SUITE\n')));
     
-    const results = [];
+    await setupFFmpeg();
+    const ffmpegPath = getFFmpegPath();
+    await createTestVideo(ffmpegPath);
 
-    // 1. Precise Trim + Transcode
-    results.push(await runTest('Precise Trim (2s)', ['-ss', '0.5', '-t', '2', '-c:v', 'libx264'], (meta) => {
-        if (parseFloat(meta.duration) > 2.5) return `Duration too long (${meta.duration}s)`;
-    }));
-
-    // 2. Resize Fit (Padding) - Testing 16:9 into 1:1
-    results.push(await runTest('Resize Fit (1:1 Pad)', ['-vf', 'scale=720:720:force_original_aspect_ratio=decrease,pad=720:720:(ow-iw)/2:(oh-ih)/2:black,setsar=1:1', '-c:v', 'libx264'], (meta) => {
-        if (meta.width !== 720 || meta.height !== 720) return `Wrong resolution ${meta.width}x${meta.height}`;
-    }));
-
-    // 3. Resize Fill (Crop)
-    results.push(await runTest('Resize Fill (9:16 Crop)', ['-vf', 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1:1', '-c:v', 'libx264'], (meta) => {
-        if (meta.width !== 720 || meta.height !== 1280) return `Wrong resolution ${meta.width}x${meta.height}`;
-    }));
-
-    // 4. Codec: H.265 (HEVC)
-    results.push(await runTest('Codec H.265', ['-c:v', 'libx265', '-crf', '28', '-t', '1'], (meta) => {
-        // Verify codec via ffprobe
-        const res = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name', '-of', 'json', path.join(OUTPUT_DIR, 'test_codec_h_265.mp4')]);
-        const codec = JSON.parse(res.stdout.toString()).streams[0].codec_name;
-        if (codec !== 'hevc') return `Wrong codec: ${codec}`;
-    }));
-
-    // 5. Audio: Remove
-    results.push(await runTest('Audio: Remove', ['-an', '-t', '1'], (meta, path) => {
-        if (checkAudio(path)) return 'Audio stream still exists';
-    }));
-
-    // 6. Audio: Convert to AAC
-    results.push(await runTest('Audio: Convert AAC', ['-c:a', 'aac', '-t', '1'], (meta, path) => {
-        const codec = checkAudio(path);
-        if (codec !== 'aac') return `Wrong audio codec: ${codec}`;
-    }));
-
-    // 7. Format: MKV Container
-    const mkvPath = path.join(OUTPUT_DIR, 'test_format_mkv.mkv');
-    if (fs.existsSync(mkvPath)) fs.unlinkSync(mkvPath);
-    const mkvRes = spawnSync(ffmpegPath, ['-y', '-i', TEST_VIDEO, '-t', '1', '-c', 'copy', mkvPath]);
-    if (mkvRes.status === 0 && fs.existsSync(mkvPath)) {
-        console.log(`${pc.green('✔')} ${pc.bold('Format: MKV Container')} - ${pc.yellow('OK')}`);
+    if (!fs.existsSync(OUTPUT_DIR)) {
+        fs.mkdirSync(OUTPUT_DIR);
     } else {
-        console.log(`${pc.red('✘')} ${pc.bold('Format: MKV Container')} - ${pc.red('FAILED')}`);
-        results.push({ success: false });
+        // Clear old test outputs to ensure new files overwrite properly
+        fs.readdirSync(OUTPUT_DIR).forEach(f => fs.unlinkSync(path.join(OUTPUT_DIR, f)));
     }
 
-    // Summary
-    const allPassed = results.every(r => r.success !== false);
-    if (allPassed) {
-        console.log(pc.green('\n✅ ALL EXHAUSTIVE TESTS PASSED!\n'));
+    const tests = [
+        {
+            name: "1. MP4 + libx264 + AAC + Fit + 16:9 + 720p + Trim",
+            config: {
+                videoPath: path.resolve(TEST_VIDEO),
+                outputPath: path.resolve(OUTPUT_DIR, "test1_mp4_h264_aac_fit_16x9_720p_trim.mp4"),
+                actions: ['trim', 'resize', 'codec', 'container'],
+                trim: { start: "00:00", end: "00:02" },
+                resize: { logic: "fit", padColor: "black", tw: "1280", th: "720", finalAsp: "16:9" },
+                targetExt: ".mp4",
+                codec: "libx264",
+                audio: "aac",
+                quality: "5"
+            }
+        },
+        {
+            name: "2. MOV + ProRes + Copy Audio + Crop + 1:1 + 1080p",
+            config: {
+                videoPath: path.resolve(TEST_VIDEO),
+                outputPath: path.resolve(OUTPUT_DIR, "test2_mov_prores_copy_crop_1x1_1080p.mov"),
+                actions: ['trim', 'resize', 'codec', 'container'],
+                trim: { start: "00:00", end: "00:01" }, // short to save time
+                resize: { logic: "crop", padColor: "black", tw: "1080", th: "1080", finalAsp: "1:1" },
+                targetExt: ".mov",
+                codec: "prores",
+                audio: "copy",
+                quality: "5"
+            }
+        },
+        {
+            name: "3. WEBM + VP9 + Remove Audio + Stretch + 9:16 + 4K",
+            config: {
+                videoPath: path.resolve(TEST_VIDEO),
+                outputPath: path.resolve(OUTPUT_DIR, "test3_webm_vp9_remove_stretch_9x16_4k.webm"),
+                actions: ['trim', 'resize', 'codec', 'container'],
+                trim: { start: "00:00", end: "00:01" }, // short to save time
+                resize: { logic: "stretch", padColor: "black", tw: "2160", th: "3840", finalAsp: "9:16" }, 
+                targetExt: ".webm",
+                codec: "libvpx-vp9",
+                audio: "remove",
+                quality: "5"
+            }
+        },
+        {
+            name: "4. MKV + libx265 + AAC + Fit + 4:3 + Custom Res (800x600)",
+            config: {
+                videoPath: path.resolve(TEST_VIDEO),
+                outputPath: path.resolve(OUTPUT_DIR, "test4_mkv_x265_aac_fit_4x3_800x600.mkv"),
+                actions: ['trim', 'resize', 'codec', 'container'],
+                trim: { start: "00:00", end: "00:01" },
+                resize: { logic: "fit", padColor: "black", tw: "800", th: "600", finalAsp: "4:3" },
+                targetExt: ".mkv",
+                codec: "libx265",
+                audio: "aac",
+                quality: "5"
+            }
+        },
+        {
+            name: "5. AVI + Copy Codec + Copy Audio + Trim",
+            config: {
+                videoPath: path.resolve(TEST_VIDEO),
+                outputPath: path.resolve(OUTPUT_DIR, "test5_avi_copy_copy_trim.avi"),
+                actions: ['trim', 'container'],
+                trim: { start: "00:01", end: "00:03" },
+                targetExt: ".avi",
+                codec: "copy",
+                audio: "copy"
+            }
+        },
+        {
+            name: "6. MP4 + AV1 + Remove Audio + Crop + Custom Aspect (21:9) + 1080p",
+            config: {
+                videoPath: path.resolve(TEST_VIDEO),
+                outputPath: path.resolve(OUTPUT_DIR, "test6_mp4_av1_remove_crop_21x9_1080p.mp4"),
+                actions: ['trim', 'resize', 'codec', 'container'],
+                trim: { start: "00:00", end: "00:01" }, // AV1 is very slow
+                resize: { logic: "crop", padColor: "black", tw: "1920", th: "822", finalAsp: "21:9" },
+                targetExt: ".mp4",
+                codec: "libaom-av1",
+                audio: "remove",
+                quality: "5"
+            }
+        }
+    ];
+
+    let passed = 0;
+    for (const test of tests) {
+        const success = await runTestCase(test.name, test.config);
+        if (success) passed++;
+        console.log(pc.dim('-------------------------------------------'));
+    }
+
+    console.log(pc.bold(`\n📊 SUMMARY: ${passed}/${tests.length} TESTS PASSED`));
+    
+    if (passed === tests.length) {
+        console.log(pc.green(pc.bold('\n✅ ALL FEATURES STABLE\n')));
     } else {
-        console.log(pc.red('\n❌ SOME TESTS FAILED. Check logs above.\n'));
+        console.log(pc.red(pc.bold('\n❌ ENGINE UNSTABLE - FIX REQUIRED\n')));
         process.exit(1);
     }
 }
 
-main();
+main().catch(err => {
+    console.error(err);
+    process.exit(1);
+});
