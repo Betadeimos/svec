@@ -1,4 +1,4 @@
-# SVEC — Agent Instructions (v1.1.1)
+# SVEC — Agent Instructions (v1.1.2)
 
 ## ⚠️ READ THIS FIRST, EVERY TIME
 
