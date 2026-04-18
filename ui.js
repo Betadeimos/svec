@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import { getFFmpegPath, setupFFmpeg } from './lib/binaries.js';
+import { getFFmpegPath, setupFFmpeg, getMetadata } from './lib/binaries.js';
 import { parseTime } from './lib/utils.js';
 
 const SVEC_LOGO = `███████╗██╗   ██╗███████╗ ██████╗
@@ -14,15 +14,6 @@ const SVEC_LOGO = `███████╗██╗   ██╗█████�
 ╚══════╝  ╚═══╝  ╚══════╝ ╚═════╝`;
 
 const TABS = ['Files', 'Trim', 'Resize', 'Format', 'Export'];
-
-const mockFiles = [
-  { name: "vacation_2024.mp4", size: "1.2 GB", duration: "02:34", resolution: "1920x1080", ratio: "16:9" },
-  { name: "interview.mov", size: "4.5 GB", duration: "01:15", resolution: "3840x2160", ratio: "16:9" },
-  { name: "product_demo.mp4", size: "256 MB", duration: "05:30", resolution: "1920x1080", ratio: "16:9" },
-  { name: "wedding.mp4", size: "8.2 GB", duration: "03:45", resolution: "1920x1080", ratio: "16:9" },
-  { name: "tutorial.webm", size: "890 MB", duration: "45:22", resolution: "1280x720", ratio: "16:9" },
-  { name: "drone_4k.mp4", size: "12.1 GB", duration: "12:45", resolution: "3840x2160", ratio: "16:9" },
-];
 
 const isMissingFileError = (err) => {
     if (!err) return false;
@@ -170,14 +161,15 @@ const App = () => {
   const { exit } = useApp();
   const [activeTab, setActiveTab] = useState(0);
   const [activeFileIdx, setActiveFileIdx] = useState(0); 
-  const [chosenFileName, setChosenFileName] = useState(mockFiles[0].name); 
+  const [videoFiles, setVideoFiles] = useState([]); 
+  const [chosenFileName, setChosenFileName] = useState(""); 
   const [activeField, setActiveField] = useState(1); 
   
   const [query, setQuery] = useState("");               
   const [customPath, setCustomPath] = useState("");     
   
   const [trimStart, setTrimStart] = useState("00:00");
-  const [trimEnd, setTrimEnd] = useState("05:30");
+  const [trimEnd, setTrimEnd] = useState("00:00");
   const [outputPathIndex, setOutputPathIndex] = useState(0);
   
   // Resize State
@@ -200,7 +192,7 @@ const App = () => {
   const [formatIdx, setFormatIdx] = useState(0);
   const [codecIdx, setCodecIdx] = useState(0);
   const [audioIdx, setAudioIdx] = useState(0);
-  const [qualityIdx, setQualityIdx] = useState(4); // 1-10 mapped to index 0-9
+  const [qualityIdx, setQualityIdx] = useState(4); 
   
   const [selFormatIdx, setSelFormatIdx] = useState(0);
   const [selCodecIdx, setSelCodecIdx] = useState(0);
@@ -210,7 +202,7 @@ const App = () => {
   const [formatPanel, setFormatPanel] = useState(0);
   
   // Export State
-  const [exportPhase, setExportPhase] = useState('ready'); // 'ready', 'exporting', 'done'
+  const [exportPhase, setExportPhase] = useState('ready'); 
   const [exportProgress, setExportProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
@@ -220,6 +212,47 @@ const App = () => {
     rows: (process.stdout.rows || 24) - 1,
   });
 
+  const loadFiles = async () => {
+      try {
+          const cwd = process.cwd();
+          const files = fs.readdirSync(cwd);
+          const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
+          
+          const filtered = files.filter(f => videoExtensions.includes(path.extname(f).toLowerCase()));
+          const results = filtered.map(name => {
+              const stats = fs.statSync(path.join(cwd, name));
+              const meta = getMetadata(path.join(cwd, name)) || {};
+              const formatSize = (bytes) => {
+                  if (bytes === 0) return '0 B';
+                  const k = 1024;
+                  const sizes = ['B', 'KB', 'MB', 'GB'];
+                  const i = Math.floor(Math.log(bytes) / Math.log(k));
+                  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+              };
+              
+              const formatDuration = (sec) => {
+                  if (!sec) return "00:00";
+                  const m = Math.floor(sec / 60);
+                  const s = Math.floor(sec % 60);
+                  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+              };
+
+              return {
+                  name,
+                  size: formatSize(stats.size),
+                  duration: formatDuration(meta.duration),
+                  resolution: meta.width ? `${meta.width}x${meta.height}` : "Unknown",
+                  ratio: meta.aspect || "16:9"
+              };
+          });
+          
+          setVideoFiles(results);
+          if (results.length > 0 && !chosenFileName) {
+              setChosenFileName(results[0].name);
+          }
+      } catch (e) {}
+  };
+
   useEffect(() => {
     const onResize = () => setSize({ columns: process.stdout.columns, rows: process.stdout.rows - 1 });
     process.stdout.on('resize', onResize);
@@ -227,17 +260,26 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-      // Ensure binaries are ready on startup
-      setupFFmpeg().catch(() => {});
+      const init = async () => {
+          await setupFFmpeg().catch(() => {});
+          await loadFiles();
+      };
+      init();
   }, []);
 
-  const filteredFiles = mockFiles.filter(f => f.name.toLowerCase().includes(query.toLowerCase()));
-  const currentFile = mockFiles.find(f => f.name === chosenFileName) || mockFiles[0];
+  useEffect(() => {
+      if (activeTab === 0) loadFiles();
+  }, [activeTab]);
+
+  const filteredFiles = videoFiles.filter(f => f.name.toLowerCase().includes(query.toLowerCase()));
+  const currentFile = videoFiles.find(f => f.name === chosenFileName) || videoFiles[0] || { name: "No video found", size: "-", duration: "00:00", resolution: "-", ratio: "16:9" };
 
   useEffect(() => {
-    setTrimStart("00:00");
-    setTrimEnd(currentFile.duration);
-  }, [currentFile.name]);
+    if (currentFile.name !== "No video found") {
+        setTrimStart("00:00");
+        setTrimEnd(currentFile.duration);
+    }
+  }, [chosenFileName]);
 
   const toSec = (t) => {
     if (!t) return 0;
