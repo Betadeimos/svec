@@ -32,6 +32,13 @@ const SVEC_LOGO = `███████╗██╗   ██╗█████�
 
 const TABS = ['Files', 'Trim', 'Resize', 'Format', 'Export'];
 
+const FORMAT_OPTIONS = ['Keep original', '.mp4', '.mov', '.webm', '.mkv', '.avi', '.gif'];
+const CODEC_OPTIONS = ['Keep original', 'libx264', 'libx265', 'prores', 'libvpx-vp9', 'libaom-av1'];
+const AUDIO_OPTIONS = ['Keep original', 'aac', 'remove'];
+const SCALE_OPTIONS = ['fit', 'crop', 'stretch'];
+const ASPECT_OPTIONS = ['Original', '16:9', '9:16', '1:1', '4:3', 'Custom'];
+const RES_OPTIONS = ['Original', '720p', '1080p', '4K', 'Custom'];
+
 const isMissingFileError = (err) => {
     if (!err) return false;
     const str = String(err).toLowerCase();
@@ -56,15 +63,9 @@ const handleFinalExecution = (
       const ffmpegPath = getFFmpegPath();
       const inputPath = path.resolve(fileName);
       
-      const formatOptions = ['Keep original', '.mp4', '.mov', '.webm', '.mkv', '.avi'];
-      const codecOptions = ['Keep original', 'libx264', 'libx265', 'prores', 'libvpx-vp9', 'libaom-av1'];
-      const audioOptions = ['Keep original', 'aac', 'remove'];
-      const scaleOptions = ['fit', 'crop', 'stretch'];
-      const aspectOptions = ['Original', '16:9', '9:16', '1:1', '4:3', 'Custom'];
-      
-      const targetExt = selFormatIdx === 0 ? path.extname(fileName) : formatOptions[selFormatIdx];
-      const videoCodec = selCodecIdx === 0 ? 'copy' : codecOptions[selCodecIdx];
-      const audioChoice = selAudioIdx === 0 ? 'copy' : audioOptions[selAudioIdx];
+      const targetExt = selFormatIdx === 0 ? path.extname(fileName) : FORMAT_OPTIONS[selFormatIdx];
+      const videoCodec = selCodecIdx === 0 ? 'copy' : CODEC_OPTIONS[selCodecIdx];
+      const audioChoice = selAudioIdx === 0 ? 'copy' : AUDIO_OPTIONS[selAudioIdx];
       
       let tw = 1920, th = 1080;
       if (selResIdx === 1) { tw = 1280; th = 720; }
@@ -72,13 +73,13 @@ const handleFinalExecution = (
       else if (selResIdx === 3) { tw = 3840; th = 2160; }
       else if (selResIdx === 4) { tw = parseInt(customResW) || 1920; th = parseInt(customResH) || 1080; }
 
-      const finalAsp = selAspectIdx === 0 ? 'skip' : aspectOptions[selAspectIdx];
+      const finalAsp = selAspectIdx === 0 ? 'skip' : ASPECT_OPTIONS[selAspectIdx];
 
       const config = {
           videoPath: inputPath,
           trim: { start: trimStart, end: trimEnd },
           resize: (selAspectIdx !== 0 || selResIdx !== 0) ? {
-              logic: scaleOptions[selScaleIdx],
+              logic: SCALE_OPTIONS[selScaleIdx],
               tw, th, finalAsp
           } : null,
           codec: videoCodec,
@@ -90,7 +91,7 @@ const handleFinalExecution = (
 
       let inputArgs = [], outputArgs = [], videoFilters = [];
       inputArgs.push('-ss', parseTime(trimStart));
-      if (trimEnd) inputArgs.push('-to', parseTime(trimEnd));
+      if (trimEnd && trimEnd !== "00:00") inputArgs.push('-to', parseTime(trimEnd));
       
       if (config.resize) {
           const { logic, tw, th } = config.resize;
@@ -99,16 +100,25 @@ const handleFinalExecution = (
           else if (logic === 'crop') videoFilters.push(`scale=${tw}:${th}:force_original_aspect_ratio=increase,crop=${tw}:${th},setsar=1:1`);
       }
 
-      const needsReEncode = config.resize || config.codec !== 'copy';
-      if (needsReEncode) {
-          const crfMap = { '1': 45, '2': 40, '3': 35, '4': 30, '5': 26, '6': 23, '7': 20, '8': 18, '9': 14, '10': 10 };
-          outputArgs.push('-c:v', config.codec === 'copy' ? 'libx264' : config.codec, '-crf', crfMap[config.quality] || '26');
+      let needsReEncode = false;
+      if (targetExt === '.gif') {
+          needsReEncode = true;
+          const gifMap = { '1': [5, 320], '2': [8, 360], '3': [10, 380], '4': [12, 420], '5': [15, 480], '6': [18, 540], '7': [20, 600], '8': [22, 640], '9': [25, 680], '10': [30, 720] };
+          const [gfps, gscale] = gifMap[config.quality || '5'];
+          videoFilters.push(`fps=${gfps},scale=${gscale}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`);
+          outputArgs.push('-c:v', 'gif');
       } else {
-          outputArgs.push('-c:v', 'copy');
+          needsReEncode = config.resize || config.codec !== 'copy';
+          if (needsReEncode) {
+              const crfMap = { '1': 45, '2': 40, '3': 35, '4': 30, '5': 26, '6': 23, '7': 20, '8': 18, '9': 14, '10': 10 };
+              outputArgs.push('-c:v', config.codec === 'copy' ? 'libx264' : config.codec, '-crf', crfMap[config.quality] || '26');
+          } else {
+              outputArgs.push('-c:v', 'copy');
+          }
       }
 
       if (videoFilters.length > 0) outputArgs.push('-vf', videoFilters.join(','));
-      if (config.audio === 'remove') outputArgs.push('-an');
+      if (config.audio === 'remove' || targetExt === '.gif') outputArgs.push('-an');
       else if (config.audio === 'copy') outputArgs.push('-c:a', 'copy');
       else {
           const audioCodec = targetExt === '.webm' ? 'libopus' : 'aac';
@@ -130,11 +140,10 @@ const handleFinalExecution = (
       };
 
       const startS = toSecondsLocal(trimStart);
-      const endS = toSecondsLocal(trimEnd);
-      const totalDuration = endS - startS;
+      const endS = (trimEnd && trimEnd !== "00:00") ? toSecondsLocal(trimEnd) : startS + 1;
+      const totalDuration = Math.max(1, endS - startS);
 
-      const child = spawn(ffmpegPath, ffmpegArgs);
-      let errorLog = '';
+      const child = spawn(ffmpegPath, ffmpegArgs);      let errorLog = '';
       
       child.stderr.on('data', (data) => {
           const str = data.toString();
@@ -536,13 +545,13 @@ const App = () => {
           const delta = key.upArrow ? -1 : 1;
           if (formatPanel === 0) {
              if (key.upArrow && formatIdx === 0) setActiveField(-1);
-             else setFormatIdx(Math.max(0, Math.min(5, formatIdx + delta)));
+             else setFormatIdx(Math.max(0, Math.min(FORMAT_OPTIONS.length - 1, formatIdx + delta)));
           } else if (formatPanel === 1) {
              if (key.upArrow && codecIdx === 0) setActiveField(-1);
-             else setCodecIdx(Math.max(0, Math.min(5, codecIdx + delta)));
+             else setCodecIdx(Math.max(0, Math.min(CODEC_OPTIONS.length - 1, codecIdx + delta)));
           } else if (formatPanel === 2) {
              if (key.upArrow && audioIdx === 0) setActiveField(-1);
-             else setAudioIdx(Math.max(0, Math.min(2, audioIdx + delta)));
+             else setAudioIdx(Math.max(0, Math.min(AUDIO_OPTIONS.length - 1, audioIdx + delta)));
           } else if (formatPanel === 3) {
              if (key.upArrow) setFormatPanel(2);
           }
@@ -668,17 +677,15 @@ const App = () => {
         React.createElement(Text, null,
           React.createElement(Text, { color: "gray" }, "Output: "),
           React.createElement(Text, { color: (activeField === 2 && outputPathIndex === 0) ? PRIMARY_COLOR : (outputPathIndex === 0 ? 'white' : 'gray') }, ` [${outputPathIndex === 0 ? 'x' : ' '}] Same as input   `),
-          React.createElement(Text, { color: (activeField === 2 && outputPathIndex === 1) ? PRIMARY_COLOR : (outputPathIndex === 1 ? 'white' : 'gray') }, ` [${outputPathIndex === 1 ? 'x' : ' '}] ` + (outputPathIndex === 1 ? (customPath.length > 50 ? customPath.slice(0, 47) + "..." : (customPath || "type path or paste (ctrl+v/right-click)")) : "Custom path..."))
+          React.createElement(Text, { color: (activeField === 2 && outputPathIndex === 1) ? PRIMARY_COLOR : (outputPathIndex === 1 ? 'white' : 'gray') }, ` [${outputPathIndex === 1 ? 'x' : ' '}] ` + (outputPathIndex === 1 ? (customPath.length > 50 ? customPath.slice(0, 47) + "..." : (customPath || "type path or paste (ctrl+v/right-click)")) : "Custom path or paste (ctrl+v/right-click)..."))
         )
       )
     )
   );
 
   const renderResizeView = () => {
-    const aspectOptions = ['Original', '16:9', '9:16', '1:1', '4:3', 'Custom'];
-    const resOptions = ['Original', '720p', '1080p', '4K', 'Custom'];
-    const aspectStr = resizeAspectIdx === 0 ? "Original" : (resizeAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : aspectOptions[resizeAspectIdx]);
-    const resStr = resizeResIdx === 0 ? "Original" : (resizeResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : resOptions[resizeResIdx]);
+    const aspectStr = resizeAspectIdx === 0 ? "Original" : (resizeAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : ASPECT_OPTIONS[resizeAspectIdx]);
+    const resStr = resizeResIdx === 0 ? "Original" : (resizeResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : RES_OPTIONS[resizeResIdx]);
     const hasScaleMode = selAspectIdx !== 0;
     let ratioStr = resizeAspectIdx === 0 ? currentFile.ratio || "16:9" : (resizeAspectIdx === 1 ? "16:9" : (resizeAspectIdx === 2 ? "9:16" : (resizeAspectIdx === 3 ? "1:1" : (resizeAspectIdx === 4 ? "4:3" : `${resizeCustomAspectW || 16}:${resizeCustomAspectH || 9}`))));
     const parts = ratioStr.split(':').map(Number);
@@ -698,7 +705,7 @@ const App = () => {
          React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 0) ? PRIMARY_COLOR : "gray", flexDirection: "column", overflow: "hidden" },
             React.createElement(Box, { paddingX: 1, borderBottom: false }, React.createElement(Text, { color: "gray" }, "ASPECT RATIO")),
             React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-               aspectOptions.map((opt, i) => {
+               ASPECT_OPTIONS.map((opt, i) => {
                   const isFocused = (activeField === 0 && resizePanel === 0 && resizeFocus === 'list' && resizeAspectIdx === i);
                   return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selAspectIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
                })
@@ -725,7 +732,7 @@ const App = () => {
          React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 2) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
             React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "RESOLUTION")),
             React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-               resOptions.map((opt, i) => {
+               RES_OPTIONS.map((opt, i) => {
                   const isFocused = (activeField === 0 && resizePanel === 2 && resizeFocus === 'list' && resizeResIdx === i);
                   return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selResIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
                })
@@ -745,15 +752,14 @@ const App = () => {
   };
 
   const renderFormatView = () => {
-    const formatOptions = ['Keep original', '.mp4', '.mov', '.webm', '.mkv', '.avi'];
-    const codecOptions = ['Keep original', 'H.264', 'H.265 (HEVC)', 'ProRes', 'VP9', 'AV1'];
-    const audioOptions = ['Keep original', 'Convert to AAC', 'Remove audio'];
+    const codecOptionsDisplay = ['Keep original', 'H.264', 'H.265 (HEVC)', 'ProRes', 'VP9', 'AV1'];
+    const audioOptionsDisplay = ['Keep original', 'Convert to AAC', 'Remove audio'];
 
     return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "row", paddingX: 1, gap: 1 },
-      React.createElement(Box, { width: "33%", flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 0) ? PRIMARY_COLOR : "gray", flexDirection: "column", overflow: "hidden" },
+      React.createElement(Box, { width: "33%", flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 0) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
          React.createElement(Box, { paddingX: 1, borderBottom: false }, React.createElement(Text, { color: "gray" }, "FORMAT")),
          React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-            formatOptions.map((opt, i) => {
+            FORMAT_OPTIONS.map((opt, i) => {
                const isFocused = (activeField === 0 && formatPanel === 0 && formatIdx === i);
                return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selFormatIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
             })
@@ -762,7 +768,7 @@ const App = () => {
       React.createElement(Box, { width: "33%", flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 1) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
          React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "VIDEO CODEC")),
          React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-            codecOptions.map((opt, i) => {
+            codecOptionsDisplay.map((opt, i) => {
                const isFocused = (activeField === 0 && formatPanel === 1 && codecIdx === i);
                return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selCodecIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
             })
@@ -772,7 +778,7 @@ const App = () => {
          React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 2) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
             React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "AUDIO")),
             React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-               audioOptions.map((opt, i) => {
+               audioOptionsDisplay.map((opt, i) => {
                   const isFocused = (activeField === 0 && formatPanel === 2 && audioIdx === i);
                   return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selAudioIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
                })
@@ -800,15 +806,12 @@ const App = () => {
   };
 
   const renderExportView = () => {
-     const formatStr = selFormatIdx === 0 ? "Original" : ['.mp4', '.mov', '.webm', '.mkv', '.avi'][selFormatIdx - 1];
+     const formatStr = selFormatIdx === 0 ? "Original" : FORMAT_OPTIONS[selFormatIdx];
      const codecStr = selCodecIdx === 0 ? "Copy" : ['H.264', 'H.265 (HEVC)', 'ProRes', 'VP9', 'AV1'][selCodecIdx - 1];
      const audioStr = selAudioIdx === 0 ? "Keep" : (selAudioIdx === 1 ? "Convert (AAC)" : "Remove");
-     const aspectOptions = ['Original', '16:9', '9:16', '1:1', '4:3', 'Custom'];
-     const scaleOptions = ['Fit', 'Fill', 'Stretch'];
-     const resOptions = ['Original', '720p', '1080p', '4K', 'Custom'];
-     const aspectStrFinal = selAspectIdx === 0 ? "Original" : (selAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : aspectOptions[selAspectIdx]);
-     const scaleStrFinal = selAspectIdx === 0 ? "-" : scaleOptions[selScaleIdx];
-     const resStrFinal = selResIdx === 0 ? "Original" : (selResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : resOptions[selResIdx]);
+     const aspectStrFinal = selAspectIdx === 0 ? "Original" : (selAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : ASPECT_OPTIONS[selAspectIdx]);
+     const scaleStrFinal = selAspectIdx === 0 ? "-" : ['Fit', 'Fill', 'Stretch'][selScaleIdx];
+     const resStrFinal = selResIdx === 0 ? "Original" : (selResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : RES_OPTIONS[selResIdx]);
      const barWidth = Math.max(20, Math.min(80, size.columns - 10));
      const filledBars = Math.floor((exportProgress / 100) * barWidth);
      const emptyBars = barWidth - filledBars;

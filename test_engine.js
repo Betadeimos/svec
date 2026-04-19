@@ -157,6 +157,18 @@ async function main() {
                 codec: "copy",
                 audio: "copy"
             }
+        },
+        {
+            name: "8. GIF + Remove Audio + Resize + 10 fps",
+            config: {
+                videoPath: path.resolve(TEST_VIDEO),
+                outputPath: path.resolve(OUTPUT_DIR, "test8_gif.gif"),
+                actions: ['trim', 'resize', 'container'],
+                trim: { start: "00:00", end: "00:02" },
+                resize: { logic: "fit", padColor: "black", tw: "1280", th: "720", finalAsp: "16:9" },
+                targetExt: ".gif",
+                quality: "3" // Maps to 10fps, 380px in processor
+            }
         }
     ];
 
