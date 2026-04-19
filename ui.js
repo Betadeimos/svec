@@ -143,7 +143,8 @@ const handleFinalExecution = (
       const endS = (trimEnd && trimEnd !== "00:00") ? toSecondsLocal(trimEnd) : startS + 1;
       const totalDuration = Math.max(1, endS - startS);
 
-      const child = spawn(ffmpegPath, ffmpegArgs);      let errorLog = '';
+      const child = spawn(ffmpegPath, ffmpegArgs);
+      let errorLog = '';
       
       child.stderr.on('data', (data) => {
           const str = data.toString();
@@ -192,7 +193,10 @@ const App = () => {
   const [activeFileIdx, setActiveFileIdx] = useState(0); 
   const [videoFiles, setVideoFiles] = useState([]); 
   const [chosenFileName, setChosenFileName] = useState(""); 
-  const [activeField, setActiveField] = useState(1); 
+  const [activeField, setActiveField] = useState(2); 
+  
+  const [currentDir, setCurrentDir] = useState(process.cwd());
+  const [dirInput, setDirInput] = useState(process.cwd());
   
   const [query, setQuery] = useState("");               
   const [customPath, setCustomPath] = useState("");     
@@ -243,20 +247,37 @@ const App = () => {
 
   const loadFiles = async () => {
       try {
-          const cwd = process.cwd();
+          const cwd = currentDir || process.cwd();
           const files = fs.readdirSync(cwd);
           const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.gif'];
           
-          const filtered = files.filter(f => videoExtensions.includes(path.extname(f).toLowerCase()));
-          const results = filtered.map(name => {
-              const stats = fs.statSync(path.join(cwd, name));
-              const meta = getMetadata(path.join(cwd, name)) || {};
+          let results = [];
+          
+          const parentDir = path.dirname(cwd);
+          if (cwd !== parentDir) {
+              results.push({ name: '..', isDir: true, size: "-", duration: "-", resolution: "-", ratio: "-" });
+          }
+
+          const items = files.map(name => {
+              const fullPath = path.join(cwd, name);
+              try {
+                  const stats = fs.statSync(fullPath);
+                  return { name, stats, isDir: stats.isDirectory() };
+              } catch(e) { return null; }
+          }).filter(Boolean);
+
+          const dirs = items.filter(i => i.isDir).map(i => ({
+              name: i.name, isDir: true, size: "-", duration: "-", resolution: "-", ratio: "-"
+          }));
+          
+          const vids = items.filter(i => !i.isDir && videoExtensions.includes(path.extname(i.name).toLowerCase())).map(i => {
+              const meta = getMetadata(path.join(cwd, i.name)) || {};
               const formatSize = (bytes) => {
                   if (bytes === 0) return '0 B';
                   const k = 1024;
                   const sizes = ['B', 'KB', 'MB', 'GB'];
-                  const i = Math.floor(Math.log(bytes) / Math.log(k));
-                  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+                  const idx = Math.floor(Math.log(bytes) / Math.log(k));
+                  return parseFloat((bytes / Math.pow(k, idx)).toFixed(1)) + ' ' + sizes[idx];
               };
               
               const formatDuration = (sec) => {
@@ -267,17 +288,21 @@ const App = () => {
               };
 
               return {
-                  name,
-                  size: formatSize(stats.size),
+                  name: i.name,
+                  isDir: false,
+                  size: formatSize(i.stats.size),
                   duration: formatDuration(meta.duration),
                   resolution: meta.width ? `${meta.width}x${meta.height}` : "Unknown",
                   ratio: meta.aspect || "16:9"
               };
           });
+
+          results = [...results, ...dirs, ...vids];
           
           setVideoFiles(results);
           if (results.length > 0 && !chosenFileName) {
-              setChosenFileName(results[0].name);
+              const firstVid = vids.length > 0 ? vids[0] : null;
+              if (firstVid) setChosenFileName(firstVid.name);
           }
       } catch (e) {}
   };
@@ -298,7 +323,7 @@ const App = () => {
 
   useEffect(() => {
       if (activeTab === 0) loadFiles();
-  }, [activeTab]);
+  }, [activeTab, currentDir]);
 
   const filteredFiles = videoFiles.filter(f => f.name.toLowerCase().includes(query.toLowerCase()));
   const currentFile = videoFiles.find(f => f.name === chosenFileName) || videoFiles[0] || { name: "No video found", size: "-", duration: "00:00", resolution: "-", ratio: "16:9" };
@@ -331,15 +356,48 @@ const App = () => {
     }
 
     if (activeTab === 0) {
-      if (activeField === 0) { // Search
+      if (activeField === 0) { // Path Input
         if (key.upArrow) setActiveField(-1);
         if (key.downArrow) setActiveField(1);
         if (key.return) {
+           let newDir = cleanPath(dirInput);
+           if (!path.isAbsolute(newDir)) newDir = path.resolve(currentDir, newDir);
+           if (fs.existsSync(newDir) && fs.statSync(newDir).isDirectory()) {
+               setCurrentDir(newDir);
+               setDirInput(newDir);
+               setActiveFileIdx(0);
+               setQuery("");
+               setActiveField(2);
+           }
+        }
+        if (key.ctrl && input === 'v') {
+            const pasted = getClipboard();
+            setDirInput(prev => prev + cleanPath(pasted));
+        }
+        else if (key.backspace) setDirInput(prev => prev.slice(0, -1));
+        else if (input && !key.ctrl && !key.meta && !key.return) { 
+            setDirInput(prev => prev + input); 
+        }
+      }
+      else if (activeField === 1) { // Search
+        if (key.upArrow) setActiveField(0);
+        if (key.downArrow) setActiveField(2);
+        if (key.return) {
            if (filteredFiles.length > 0) {
-               setChosenFileName(filteredFiles[activeFileIdx % filteredFiles.length].name);
-               if (size.rows >= 20 && size.columns >= 50) setActiveField(2);
-               else { setActiveTab(1); setActiveField(0); }
-           } else setActiveField(1);
+               const selected = filteredFiles[activeFileIdx % filteredFiles.length];
+               if (selected.isDir) {
+                   const newDir = path.resolve(currentDir, selected.name);
+                   setCurrentDir(newDir);
+                   setDirInput(newDir);
+                   setActiveFileIdx(0);
+                   setQuery("");
+                   setActiveField(2);
+               } else {
+                   setChosenFileName(selected.name);
+                   if (size.rows >= 20 && size.columns >= 50) setActiveField(3);
+                   else { setActiveTab(1); setActiveField(0); }
+               }
+           } else setActiveField(2);
            return;
         }
         if (key.backspace) { setQuery(prev => prev.slice(0, -1)); setActiveFileIdx(0); }
@@ -348,23 +406,34 @@ const App = () => {
             setActiveFileIdx(0);
         }
       }
-      else if (activeField === 1) { // List
+      else if (activeField === 2) { // List
         if (key.upArrow) {
           if (activeFileIdx > 0) setActiveFileIdx(prev => prev - 1);
-          else setActiveField(0);
+          else setActiveField(1);
         }
         if (key.downArrow) {
           if (activeFileIdx < filteredFiles.length - 1) setActiveFileIdx(prev => prev + 1);
-          else if (size.rows >= 20 && size.columns >= 50) setActiveField(2);
+          else if (size.rows >= 20 && size.columns >= 50) setActiveField(3);
         }
         if (key.return) {
-          if (filteredFiles[activeFileIdx]) setChosenFileName(filteredFiles[activeFileIdx].name);
-          if (size.rows >= 20 && size.columns >= 50) setActiveField(2);
-          else { setActiveTab(1); setActiveField(0); }
+          if (filteredFiles[activeFileIdx]) {
+              const selected = filteredFiles[activeFileIdx];
+              if (selected.isDir) {
+                  const newDir = path.resolve(currentDir, selected.name);
+                  setCurrentDir(newDir);
+                  setDirInput(newDir);
+                  setActiveFileIdx(0);
+                  setQuery("");
+              } else {
+                  setChosenFileName(selected.name);
+                  if (size.rows >= 20 && size.columns >= 50) setActiveField(3);
+                  else { setActiveTab(1); setActiveField(0); }
+              }
+          }
         }
       }
-      else if (activeField === 2) { // Output
-        if (key.upArrow) setActiveField(1);
+      else if (activeField === 3) { // Output
+        if (key.upArrow) setActiveField(2);
         if (key.leftArrow || key.rightArrow) setOutputPathIndex(prev => (prev === 0 ? 1 : 0));
         
         if (outputPathIndex === 1) {
@@ -634,35 +703,67 @@ const App = () => {
     }
   });
 
-  const renderFilesView = () => (
-    React.createElement(Box, { width: "100%", flexDirection: "column", flexGrow: 1 },
-      React.createElement(Box, { height: 3, width: "100%", borderStyle: "single", borderColor: activeField === 0 ? PRIMARY_COLOR : "gray", paddingX: 1, marginBottom: 0, flexShrink: 0 },
-        query.length === 0 
-          ? React.createElement(Text, { color: "gray" }, "> search files...")
-          : React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "white" }, `> ${query.length > 80 ? query.slice(0, 77) + "..." : query}`)
+  const renderFilesView = () => {
+    const showLogo = size.rows >= 30;
+    const hasFooter = size.rows >= 22;
+    const hasOutput = size.rows >= 21 && size.columns >= 50;
+    const containerHeight = Math.max(18, Math.min(26, size.rows - (showLogo ? 10 : 2)));
+    const activeViewHeight = containerHeight - 2 - 1 - (hasFooter ? 1 : 0);
+    
+    // Tight Bento overhead math (no gaps, just heights and headers)
+    const fixedOverhead = 3 + 3 + 2 + 1 + (hasOutput ? 3 : 0);
+    const maxVisibleFiles = Math.max(1, activeViewHeight - fixedOverhead);
+
+    let startIndex = Math.max(0, activeFileIdx - Math.floor(maxVisibleFiles / 2));
+    if (startIndex + maxVisibleFiles > filteredFiles.length) {
+      startIndex = Math.max(0, filteredFiles.length - maxVisibleFiles);
+    }
+    const visibleFiles = filteredFiles.slice(startIndex, startIndex + maxVisibleFiles);
+
+    return React.createElement(Box, { width: "100%", flexDirection: "column", flexGrow: 1 },
+      // Path Box
+      React.createElement(Box, { height: 3, width: "100%", borderStyle: "single", borderColor: activeField === 0 ? PRIMARY_COLOR : "gray", paddingX: 1, flexShrink: 0 },
+        React.createElement(Text, null, 
+          React.createElement(Text, { color: "gray" }, "Path: "),
+          React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "white" }, (dirInput.length > size.columns - 15 ? "..." + dirInput.slice(-(size.columns - 15)) : dirInput) + (activeField === 0 ? "_" : ""))
+        )
       ),
-      React.createElement(Box, { width: "100%", flexGrow: 1, gap: size.columns >= 85 ? 1 : 0, flexDirection: 'row', overflow: "hidden" },
-        React.createElement(Box, { flexDirection: "column", flexGrow: 3, borderStyle: "single", borderColor: activeField === 1 ? PRIMARY_COLOR : "gray", overflow: "hidden" },
-          React.createElement(Box, { paddingX: 1, flexShrink: 0 },
-            React.createElement(Box, { flexGrow: 1 }, React.createElement(Text, { color: "gray", underline: true }, "NAME")),
-            React.createElement(Box, { width: 10 }, React.createElement(Text, { color: "gray", underline: true }, "SIZE")),
-            React.createElement(Box, { width: 8 }, React.createElement(Text, { color: "gray", underline: true }, "LEN"))
+      // Middle Row
+      React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: 'row', gap: 1, overflow: "hidden" },
+        // Left Column (Search + List)
+        React.createElement(Box, { flexDirection: "column", flexGrow: 1, overflow: "hidden" },
+          // Search Box
+          React.createElement(Box, { height: 3, width: "100%", borderStyle: "single", borderColor: activeField === 1 ? PRIMARY_COLOR : "gray", paddingX: 1, flexShrink: 0 },
+            query.length === 0 
+              ? React.createElement(Text, { color: "gray" }, "> search files...")
+              : React.createElement(Text, { color: activeField === 1 ? PRIMARY_COLOR : "white" }, `> ${query.length > 80 ? query.slice(0, 77) + "..." : query}`)
           ),
-          React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1, overflow: "hidden" },
-            filteredFiles.length === 0 ? React.createElement(Text, { color: "gray" }, "  No matches.") :
-            filteredFiles.map((file, index) => {
-              const isFocused = activeFileIdx === index && activeField === 1;
-              const isChosen = chosenFileName === file.name;
-              let color = isFocused ? PRIMARY_COLOR : (isChosen ? 'white' : 'gray');
-              const pointer = isFocused ? '❯ ' : '  ';
-              return React.createElement(Box, { key: file.name },
-                React.createElement(Box, { flexGrow: 1 }, React.createElement(Text, { color, wrap: "truncate-end" }, `${pointer}${file.name}`)),
-                React.createElement(Box, { width: 10 }, React.createElement(Text, { color }, file.size)),
-                React.createElement(Box, { width: 8 }, React.createElement(Text, { color }, file.duration))
-              );
-            })
+          // Files Box
+          React.createElement(Box, { flexDirection: "column", flexGrow: 1, borderStyle: "single", borderColor: activeField === 2 ? PRIMARY_COLOR : "gray", overflow: "hidden" },
+            React.createElement(Box, { paddingX: 1, flexShrink: 0 },
+              React.createElement(Box, { flexGrow: 1 }, React.createElement(Text, { color: "gray", underline: true }, "NAME")),
+              React.createElement(Box, { width: 10 }, React.createElement(Text, { color: "gray", underline: true }, "SIZE")),
+              React.createElement(Box, { width: 8 }, React.createElement(Text, { color: "gray", underline: true }, "LEN"))
+            ),
+            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1, overflow: "hidden" },    
+              filteredFiles.length === 0 ? React.createElement(Text, { color: "gray" }, "  No matches.") :
+              visibleFiles.map((file, i) => {
+                const index = startIndex + i;
+                const isFocused = activeFileIdx === index && activeField === 2;
+                const isChosen = chosenFileName === file.name;
+                let color = isFocused ? PRIMARY_COLOR : (file.isDir ? 'cyan' : (isChosen ? 'white' : 'gray'));     
+                const pointer = isFocused ? '❯ ' : '  ';
+                const displayName = file.isDir ? `[DIR] ${file.name}` : file.name;
+                return React.createElement(Box, { key: file.name },
+                  React.createElement(Box, { flexGrow: 1 }, React.createElement(Text, { color, wrap: "truncate-end" }, `${pointer}${displayName}`)),
+                  React.createElement(Box, { width: 10 }, React.createElement(Text, { color }, file.size)),        
+                  React.createElement(Box, { width: 8 }, React.createElement(Text, { color }, file.duration))      
+                );
+              })
+            )
           )
         ),
+        // Info Box
         size.columns >= 85 && React.createElement(Box, { width: 30, flexDirection: "column", borderStyle: "single", borderColor: "gray", flexShrink: 0 },
           React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray", underline: true }, "INFO")),
           React.createElement(Box, { flexDirection: "column", paddingX: 1 },
@@ -673,205 +774,15 @@ const App = () => {
           )
         )
       ),
-      (size.rows >= 20 && size.columns >= 50) && React.createElement(Box, { height: 3, width: "100%", borderStyle: "single", borderColor: activeField === 2 ? PRIMARY_COLOR : "gray", paddingX: 1, flexShrink: 0 },
+      // Output Box
+      hasOutput && React.createElement(Box, { height: 3, width: "100%", borderStyle: "single", borderColor: activeField === 3 ? PRIMARY_COLOR : "gray", paddingX: 1, flexShrink: 0 },
         React.createElement(Text, null,
           React.createElement(Text, { color: "gray" }, "Output: "),
-          React.createElement(Text, { color: (activeField === 2 && outputPathIndex === 0) ? PRIMARY_COLOR : (outputPathIndex === 0 ? 'white' : 'gray') }, ` [${outputPathIndex === 0 ? 'x' : ' '}] Same as input   `),
-          React.createElement(Text, { color: (activeField === 2 && outputPathIndex === 1) ? PRIMARY_COLOR : (outputPathIndex === 1 ? 'white' : 'gray') }, ` [${outputPathIndex === 1 ? 'x' : ' '}] ` + (outputPathIndex === 1 ? (customPath.length > 50 ? customPath.slice(0, 47) + "..." : (customPath || "type path or paste (ctrl+v/right-click)")) : "Custom path or paste (ctrl+v/right-click)..."))
+          React.createElement(Text, { color: (activeField === 3 && outputPathIndex === 0) ? PRIMARY_COLOR : (outputPathIndex === 0 ? 'white' : 'gray') }, ` [${outputPathIndex === 0 ? 'x' : ' '}] Same as input   `),
+          React.createElement(Text, { color: (activeField === 3 && outputPathIndex === 1) ? PRIMARY_COLOR : (outputPathIndex === 1 ? 'white' : 'gray') }, ` [${outputPathIndex === 1 ? 'x' : ' '}] ` + (outputPathIndex === 1 ? (customPath.length > 50 ? customPath.slice(0, 47) + "..." : (customPath || "type path or paste (ctrl+v/right-click)")) : "Custom path or paste (ctrl+v/right-click)..."))
         )
       )
-    )
-  );
-
-  const renderResizeView = () => {
-    const aspectStr = resizeAspectIdx === 0 ? "Original" : (resizeAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : ASPECT_OPTIONS[resizeAspectIdx]);
-    const resStr = resizeResIdx === 0 ? "Original" : (resizeResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : RES_OPTIONS[resizeResIdx]);
-    const hasScaleMode = selAspectIdx !== 0;
-    let ratioStr = resizeAspectIdx === 0 ? currentFile.ratio || "16:9" : (resizeAspectIdx === 1 ? "16:9" : (resizeAspectIdx === 2 ? "9:16" : (resizeAspectIdx === 3 ? "1:1" : (resizeAspectIdx === 4 ? "4:3" : `${resizeCustomAspectW || 16}:${resizeCustomAspectH || 9}`))));
-    const parts = ratioStr.split(':').map(Number);
-    const targetRatio = (parts.length === 2 && parts[0] > 0 && parts[1] > 0) ? parts[0] / parts[1] : 16/9;
-    let previewW = Math.round(targetRatio * 10 * 2), previewH = 10;
-    if (previewW > 26) { previewW = 26; previewH = Math.round(26 / (targetRatio * 2)); }
-    previewW = Math.max(12, previewW); previewH = Math.max(4, previewH);
-
-    return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "row", paddingX: 1, gap: 1 },
-      React.createElement(Box, { width: 30, borderStyle: "single", borderColor: "gray", flexDirection: "column", alignItems: "center", justifyContent: "center" },
-         React.createElement(Box, { borderStyle: "round", borderColor: PRIMARY_COLOR, width: previewW, height: previewH, flexDirection: "column", alignItems: "center", justifyContent: "center" },
-            React.createElement(Text, { color: PRIMARY_COLOR, bold: true }, aspectStr),
-            React.createElement(Text, { color: "gray" }, resStr)
-         )
-      ),
-      React.createElement(Box, { flexGrow: 1, flexDirection: "row", gap: 1 },
-         React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 0) ? PRIMARY_COLOR : "gray", flexDirection: "column", overflow: "hidden" },
-            React.createElement(Box, { paddingX: 1, borderBottom: false }, React.createElement(Text, { color: "gray" }, "ASPECT RATIO")),
-            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-               ASPECT_OPTIONS.map((opt, i) => {
-                  const isFocused = (activeField === 0 && resizePanel === 0 && resizeFocus === 'list' && resizeAspectIdx === i);
-                  return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selAspectIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
-               })
-            ),
-            resizeAspectIdx === 5 ? React.createElement(Box, { paddingX: 1, marginBottom: 0, flexDirection: "row", gap: 1 },
-               React.createElement(Box, { borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 0 && resizeFocus === 'customW') ? PRIMARY_COLOR : "gray", paddingX: 1 },
-                  React.createElement(Text, { color: (activeField === 0 && resizePanel === 0 && resizeFocus === 'customW') ? PRIMARY_COLOR : "white" }, (resizeCustomAspectW || " ") + (activeField === 0 && resizePanel === 0 && resizeFocus === 'customW' ? "_" : ""))
-               ),
-               React.createElement(Box, { justifyContent: "center", alignItems: "center" }, React.createElement(Text, { color: "gray" }, "x")),
-               React.createElement(Box, { borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 0 && resizeFocus === 'customH') ? PRIMARY_COLOR : "gray", paddingX: 1 },
-                  React.createElement(Text, { color: (activeField === 0 && resizePanel === 0 && resizeFocus === 'customH') ? PRIMARY_COLOR : "white" }, (resizeCustomAspectH || " ") + (activeField === 0 && resizePanel === 0 && resizeFocus === 'customH' ? "_" : ""))
-               )
-            ) : React.createElement(Box, { height: 3 })
-         ),
-         hasScaleMode && React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 1) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
-            React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "SCALE MODE")),
-            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-               ['Fit (letterbox)', 'Fill (crop)', 'Stretch'].map((opt, i) => {
-                  const isFocused = (activeField === 0 && resizePanel === 1 && resizeScaleIdx === i);
-                  return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selScaleIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
-               })
-            )
-         ),
-         React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 2) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
-            React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "RESOLUTION")),
-            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-               RES_OPTIONS.map((opt, i) => {
-                  const isFocused = (activeField === 0 && resizePanel === 2 && resizeFocus === 'list' && resizeResIdx === i);
-                  return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selResIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
-               })
-            ),
-            resizeResIdx === 4 ? React.createElement(Box, { paddingX: 1, marginBottom: 0, flexDirection: "row", gap: 1 },
-               React.createElement(Box, { borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 2 && resizeFocus === 'customW') ? PRIMARY_COLOR : "gray", paddingX: 1 },
-                  React.createElement(Text, { color: (activeField === 0 && resizePanel === 2 && resizeFocus === 'customW') ? PRIMARY_COLOR : "white" }, (resizeCustomResW || " ") + (activeField === 0 && resizePanel === 2 && resizeFocus === 'customW' ? "_" : ""))
-               ),
-               React.createElement(Box, { justifyContent: "center", alignItems: "center" }, React.createElement(Text, { color: "gray" }, "x")),
-               React.createElement(Box, { borderStyle: "single", borderColor: (activeField === 0 && resizePanel === 2 && resizeFocus === 'customH') ? PRIMARY_COLOR : "gray", paddingX: 1 },
-                  React.createElement(Text, { color: (activeField === 0 && resizePanel === 2 && resizeFocus === 'customH') ? PRIMARY_COLOR : "white" }, (resizeCustomResH || " ") + (activeField === 0 && resizePanel === 2 && resizeFocus === 'customH' ? "_" : ""))
-               )
-            ) : React.createElement(Box, { height: 3 })
-         )
-      )
     );
-  };
-
-  const renderFormatView = () => {
-    const codecOptionsDisplay = ['Keep original', 'H.264', 'H.265 (HEVC)', 'ProRes', 'VP9', 'AV1'];
-    const audioOptionsDisplay = ['Keep original', 'Convert to AAC', 'Remove audio'];
-
-    return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "row", paddingX: 1, gap: 1 },
-      React.createElement(Box, { width: "33%", flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 0) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
-         React.createElement(Box, { paddingX: 1, borderBottom: false }, React.createElement(Text, { color: "gray" }, "FORMAT")),
-         React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-            FORMAT_OPTIONS.map((opt, i) => {
-               const isFocused = (activeField === 0 && formatPanel === 0 && formatIdx === i);
-               return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selFormatIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
-            })
-         )
-      ),
-      React.createElement(Box, { width: "33%", flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 1) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
-         React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "VIDEO CODEC")),
-         React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-            codecOptionsDisplay.map((opt, i) => {
-               const isFocused = (activeField === 0 && formatPanel === 1 && codecIdx === i);
-               return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selCodecIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
-            })
-         )
-      ),
-      React.createElement(Box, { width: "33%", flexGrow: 1, flexDirection: "column" },
-         React.createElement(Box, { flexGrow: 1, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 2) ? PRIMARY_COLOR : "gray", flexDirection: "column" },
-            React.createElement(Box, { paddingX: 1 }, React.createElement(Text, { color: "gray" }, "AUDIO")),
-            React.createElement(Box, { flexDirection: "column", paddingX: 1, flexGrow: 1 },
-               audioOptionsDisplay.map((opt, i) => {
-                  const isFocused = (activeField === 0 && formatPanel === 2 && audioIdx === i);
-                  return React.createElement(Text, { key: i, color: isFocused ? PRIMARY_COLOR : (selAudioIdx === i ? "white" : "gray") }, isFocused ? `> ${opt}` : `  ${opt}`);
-               })
-            )
-         ),
-         React.createElement(Box, { height: 5, borderStyle: "single", borderColor: (activeField === 0 && formatPanel === 3) ? PRIMARY_COLOR : "gray", flexDirection: "column", flexShrink: 0, justifyContent: "center" },
-            React.createElement(Box, { paddingX: 1, flexDirection: "row", justifyContent: "space-between" }, 
-               React.createElement(Text, { color: "gray" }, "QUALITY"),
-               React.createElement(Text, { color: (activeField === 0 && formatPanel === 3) ? PRIMARY_COLOR : "white" }, `${(activeField === 0 && formatPanel === 3 ? qualityIdx : selQualityIdx) + 1}`)
-            ),
-            React.createElement(Box, { flexDirection: "row", paddingX: 1, marginTop: 1, justifyContent: "space-between" },
-               React.createElement(Text, { color: "gray" }, "1"),
-               React.createElement(Box, { flexDirection: "row", flexGrow: 1, justifyContent: "center" },
-                  React.createElement(Text, null, Array.from({ length: 10 }).map((_, i) => {
-                        const isActive = i <= (activeField === 0 && formatPanel === 3 ? qualityIdx : selQualityIdx);
-                        const isHighlight = activeField === 0 && formatPanel === 3;
-                        return React.createElement(Text, { key: i, color: isActive ? (isHighlight ? PRIMARY_COLOR : "white") : "gray", dimColor: !isActive }, i < 9 ? "█ " : "█");
-                  }))
-               ),
-               React.createElement(Text, { color: "gray" }, "10")
-            )
-         )
-      )
-    );
-  };
-
-  const renderExportView = () => {
-     const formatStr = selFormatIdx === 0 ? "Original" : FORMAT_OPTIONS[selFormatIdx];
-     const codecStr = selCodecIdx === 0 ? "Copy" : ['H.264', 'H.265 (HEVC)', 'ProRes', 'VP9', 'AV1'][selCodecIdx - 1];
-     const audioStr = selAudioIdx === 0 ? "Keep" : (selAudioIdx === 1 ? "Convert (AAC)" : "Remove");
-     const aspectStrFinal = selAspectIdx === 0 ? "Original" : (selAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : ASPECT_OPTIONS[selAspectIdx]);
-     const scaleStrFinal = selAspectIdx === 0 ? "-" : ['Fit', 'Fill', 'Stretch'][selScaleIdx];
-     const resStrFinal = selResIdx === 0 ? "Original" : (selResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : RES_OPTIONS[selResIdx]);
-     const barWidth = Math.max(20, Math.min(80, size.columns - 20)); 
-     const filledBars = Math.floor((exportProgress / 100) * barWidth);
-
-     const actionBorderColor = exportPhase === 'done' ? 'green' : (exportPhase === 'exporting' || activeField === 0 ? PRIMARY_COLOR : 'gray');
-
-     return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "column", paddingX: 1, justifyContent: "center", alignItems: "center" },
-        // 1. Top Slot: Error (Fixed height 3)
-        React.createElement(Box, { height: 3, width: "100%", justifyContent: "center", marginBottom: 1 },
-            error ? React.createElement(Box, { borderStyle: "single", borderColor: "red", paddingX: 2 }, 
-                React.createElement(Text, { color: "red" }, `Error: ${error.length > 70 ? error.slice(0, 67) + "..." : error}`)
-            ) : null
-        ),
-
-        // 2. Middle Slot: Recap (Fixed height 6)
-        React.createElement(Box, { height: 6, width: Math.min(size.columns - 4, 100), borderStyle: "single", borderColor: "gray", flexDirection: "column", paddingX: 2, paddingY: 0, marginBottom: 1 },
-           React.createElement(Box, { width: "100%", justifyContent: "space-between", flexDirection: "row" },
-               React.createElement(Box, { flexDirection: "column" },
-                  React.createElement(Text, { color: "gray" }, `Input: `, React.createElement(Text, { color: "white", bold: true }, currentFile.name)),
-                  React.createElement(Text, { color: "gray" }, `Trim: `, React.createElement(Text, { color: "white" }, `${trimStart} - ${trimEnd}`)),
-                  React.createElement(Text, { color: "gray" }, `Format: `, React.createElement(Text, { color: "white" }, formatStr))
-               ),
-               React.createElement(Box, { flexDirection: "column", marginX: 2 },
-                  React.createElement(Text, { color: "gray" }, `Aspect: `, React.createElement(Text, { color: "white" }, aspectStrFinal)),
-                  React.createElement(Text, { color: "gray" }, `Scale: `, React.createElement(Text, { color: "white" }, scaleStrFinal)),
-                  React.createElement(Text, { color: "gray" }, `Res: `, React.createElement(Text, { color: "white" }, resStrFinal))
-               ),
-               React.createElement(Box, { flexDirection: "column" },
-                  React.createElement(Text, { color: "gray" }, `Codec: `, React.createElement(Text, { color: "white" }, codecStr)),
-                  React.createElement(Text, { color: "gray" }, `Quality: `, React.createElement(Text, { color: "white" }, `${selQualityIdx + 1}/10`)),
-                  React.createElement(Text, { color: "gray" }, `Audio: `, React.createElement(Text, { color: "white" }, audioStr))
-               )
-           )
-        ),
-
-        // 3. Bottom Slot: Actions/Progress (Fixed height 7)
-        React.createElement(Box, { height: 7, width: Math.min(size.columns - 4, 100), borderStyle: "single", borderColor: actionBorderColor, justifyContent: "center", alignItems: "center", paddingX: 2 },
-            exportPhase === 'ready' ? (
-                React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "gray", bold: true }, "[ Press Enter to Start Export ]")
-            ) : exportPhase === 'exporting' ? (
-                React.createElement(Box, { flexDirection: "column", width: barWidth + 2 },
-                   React.createElement(Box, { justifyContent: "space-between", marginBottom: 1 },
-                      React.createElement(Text, { color: "cyan" }, "Processing..."),
-                      React.createElement(Text, { color: "white" }, `${Math.floor(exportProgress)}%`)
-                   ),
-                   React.createElement(Box, { width: "100%", justifyContent: "center" },
-                      Array.from({ length: barWidth }).map((_, i) => {
-                         const isActive = i < filledBars;
-                         return React.createElement(Text, { key: i, color: isActive ? "white" : "gray", dimColor: !isActive }, "█");
-                      })
-                   )
-                )
-            ) : exportPhase === 'done' ? (
-                React.createElement(Box, { flexDirection: "column", justifyContent: "center", alignItems: "center" },
-                   React.createElement(Text, { color: "green", bold: true }, "Export Complete!"),
-                   React.createElement(Text, { color: "gray" }, "Thank you for using SVEC."),
-                   React.createElement(Text, { color: "white" }, "[Enter] Start New Conversion • [Q] Quit")
-                )
-            ) : null
-        )
-     );
   };
 
   const renderActiveView = () => {
@@ -936,7 +847,7 @@ const App = () => {
       React.createElement(Box, { width: "100%", justifyContent: "space-between", flexShrink: 0 },
         React.createElement(Box, null, TABS.map((tab, index) => {
           const color = (activeTab === index && activeField === -1) ? PRIMARY_COLOR : (activeTab === index ? 'white' : 'gray');
-          return React.createElement(Box, { key: tab, marginRight: 2 }, React.createElement(Text, { color, bold: (activeTab === index && activeField === -1) }, `[${tab}]`));
+          return React.createElement(Box, { key: tab, marginRight: 2 }, React.createElement(Text, { color, bold: (activeTab === index && activeField === -1) ? true : false }, `[${tab}]`));
         })),
         React.createElement(Text, { color: "gray" }, `${activeTab + 1}/${TABS.length}`)
       ),
