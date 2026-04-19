@@ -1,12 +1,14 @@
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import pc from 'picocolors';
 import { setupFFmpeg, getFFmpegPath, getMetadata } from './lib/binaries.js';
 import { executeFFmpeg } from './lib/processor.js';
 
 const TEST_VIDEO = 'test_footage.mp4';
 const OUTPUT_DIR = 'test_output';
+const DESKTOP_DIR = path.join(os.homedir(), 'Desktop');
 
 async function createTestVideo(ffmpegPath) {
     if (fs.existsSync(TEST_VIDEO)) return;
@@ -142,6 +144,18 @@ async function main() {
                 codec: "libaom-av1",
                 audio: "remove",
                 quality: "5"
+            }
+        },
+        {
+            name: "7. Custom Desktop Path Test",
+            config: {
+                videoPath: path.resolve(TEST_VIDEO),
+                outputPath: path.join(DESKTOP_DIR, "svec_test_desktop.mp4"),
+                actions: ['trim'],
+                trim: { start: "00:00", end: "00:01" },
+                targetExt: ".mp4",
+                codec: "copy",
+                audio: "copy"
             }
         }
     ];

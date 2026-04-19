@@ -1,10 +1,26 @@
 import { render, Box, Text, useInput, useApp } from 'ink';
 import React, { useState, useEffect } from 'react';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { getFFmpegPath, setupFFmpeg, getMetadata } from './lib/binaries.js';
 import { parseTime } from './lib/utils.js';
+
+const getClipboard = () => {
+  try {
+    if (process.platform === 'win32') {
+      return execSync('powershell.exe -NoProfile -Command Get-Clipboard').toString().trim();
+    }
+    return "";
+  } catch (e) { return ""; }
+};
+
+const cleanPath = (p) => {
+    if (!p) return "";
+    // Remove control characters, quotes, and whitespace from start/end
+    return p.replace(/[\x00-\x1F\x7F]/g, "").replace(/[\"']/g, "").trim();
+};
 
 const SVEC_LOGO = `███████╗██╗   ██╗███████╗ ██████╗
 ██╔════╝██║   ██║██╔════╝██╔════╝
@@ -31,7 +47,7 @@ const handleFinalExecution = (
   selAspectIdx, selScaleIdx, selResIdx, 
   customAspectW, customAspectH, customResW, customResH, 
   selFormatIdx, selCodecIdx, selAudioIdx, selQualityIdx, 
-  fileName, outputIndex, customPath,
+  fileName, outputIndex, customPathInput,
   onProgress, onComplete, onError
 ) => {
   return new Promise((resolve) => {
@@ -93,10 +109,13 @@ const handleFinalExecution = (
       if (videoFilters.length > 0) outputArgs.push('-vf', videoFilters.join(','));
       if (config.audio === 'remove') outputArgs.push('-an');
       else if (config.audio === 'copy') outputArgs.push('-c:a', 'copy');
-      else outputArgs.push('-c:a', 'aac');
+      else {
+          const audioCodec = targetExt === '.webm' ? 'libopus' : 'aac';
+          outputArgs.push('-c:a', audioCodec);
+      }
 
       const parsed = path.parse(inputPath);
-      const outDir = outputIndex === 0 ? parsed.dir || '.' : customPath;
+      const outDir = outputIndex === 0 ? parsed.dir || '.' : cleanPath(customPathInput);
       let outputPath = path.join(outDir, `${parsed.name}_edited${targetExt}`);
       let c = 1; while (fs.existsSync(outputPath)) { outputPath = path.join(outDir, `${parsed.name}_edited_${c++}${targetExt}`); }
 
@@ -275,11 +294,11 @@ const App = () => {
   const currentFile = videoFiles.find(f => f.name === chosenFileName) || videoFiles[0] || { name: "No video found", size: "-", duration: "00:00", resolution: "-", ratio: "16:9" };
 
   useEffect(() => {
-    if (currentFile.name !== "No video found") {
+    if (currentFile && currentFile.name !== "No video found") {
         setTrimStart("00:00");
         setTrimEnd(currentFile.duration);
     }
-  }, [chosenFileName]);
+  }, [currentFile.name, currentFile.duration]);
 
   const toSec = (t) => {
     if (!t) return 0;
@@ -306,13 +325,15 @@ const App = () => {
         if (key.upArrow) setActiveField(-1);
         if (key.downArrow) setActiveField(1);
         if (key.return) {
-           if (query.trim() && filteredFiles.length > 0) {
-               setChosenFileName(filteredFiles[0].name);
-               setActiveField(2); 
+           if (filteredFiles.length > 0) {
+               setChosenFileName(filteredFiles[activeFileIdx % filteredFiles.length].name);
+               if (size.rows >= 20 && size.columns >= 50) setActiveField(2);
+               else { setActiveTab(1); setActiveField(0); }
            } else setActiveField(1);
+           return;
         }
         if (key.backspace) { setQuery(prev => prev.slice(0, -1)); setActiveFileIdx(0); }
-        else if (input && !key.ctrl && !key.meta && input.length === 1) { 
+        else if (input && !key.ctrl && !key.meta && input.length === 1 && !key.return) { 
             setQuery(prev => prev + input); 
             setActiveFileIdx(0);
         }
@@ -337,8 +358,14 @@ const App = () => {
         if (key.leftArrow || key.rightArrow) setOutputPathIndex(prev => (prev === 0 ? 1 : 0));
         
         if (outputPathIndex === 1) {
-            if (key.backspace) setCustomPath(prev => prev.slice(0, -1));
-            else if (input && !key.ctrl && !key.meta && input.length === 1) setCustomPath(prev => prev + input);
+            if (key.ctrl && input === 'v') {
+                const pasted = getClipboard();
+                setCustomPath(prev => prev + cleanPath(pasted));
+            }
+            else if (key.backspace) setCustomPath(prev => prev.slice(0, -1));
+            else if (input && !key.ctrl && !key.meta) {
+                setCustomPath(prev => prev + input);
+            }
         }
         if (key.return) { setActiveTab(1); setActiveField(0); }
       }
@@ -640,7 +667,7 @@ const App = () => {
         React.createElement(Text, null,
           React.createElement(Text, { color: "gray" }, "Output: "),
           React.createElement(Text, { color: (activeField === 2 && outputPathIndex === 0) ? PRIMARY_COLOR : (outputPathIndex === 0 ? 'white' : 'gray') }, ` [${outputPathIndex === 0 ? 'x' : ' '}] Same as input   `),
-          React.createElement(Text, { color: (activeField === 2 && outputPathIndex === 1) ? PRIMARY_COLOR : (outputPathIndex === 1 ? 'white' : 'gray') }, ` [${outputPathIndex === 1 ? 'x' : ' '}] ` + (outputPathIndex === 1 ? (customPath.length > 50 ? customPath.slice(0, 47) + "..." : (customPath || "type path...")) : "Custom path..."))
+          React.createElement(Text, { color: (activeField === 2 && outputPathIndex === 1) ? PRIMARY_COLOR : (outputPathIndex === 1 ? 'white' : 'gray') }, ` [${outputPathIndex === 1 ? 'x' : ' '}] ` + (outputPathIndex === 1 ? (customPath.length > 50 ? customPath.slice(0, 47) + "..." : (customPath || "type path or paste (ctrl+v/right-click)")) : "Custom path..."))
         )
       )
     )
