@@ -841,12 +841,17 @@ const App = () => {
            React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "gray", bold: true }, "[ Press Enter to Start Export ]")
         ),
         exportPhase === 'exporting' && React.createElement(Box, { width: "100%", justifyContent: "center" },
-           React.createElement(Box, { width: barWidth + 4, borderStyle: "single", borderColor: PRIMARY_COLOR, flexDirection: "column", paddingY: 1, paddingX: 2 },
+           React.createElement(Box, { width: barWidth + 6, borderStyle: "single", borderColor: PRIMARY_COLOR, flexDirection: "column", paddingY: 1, paddingX: 2 },
               React.createElement(Box, { justifyContent: "space-between", marginBottom: 1 },
                  React.createElement(Text, { color: "cyan" }, "Processing..."),
                  React.createElement(Text, { color: "white" }, `${Math.floor(exportProgress)}%`)
               ),
-              React.createElement(Text, { color: PRIMARY_COLOR }, "█".repeat(filledBars) + "─".repeat(emptyBars))
+              React.createElement(Box, { width: "100%", justifyContent: "center" },
+                 Array.from({ length: barWidth }).map((_, i) => {
+                    const isActive = i < filledBars;
+                    return React.createElement(Text, { key: i, color: isActive ? "white" : "gray", dimColor: !isActive }, "█");
+                 })
+              )
            )
         ),
         exportPhase === 'done' && React.createElement(Box, { borderStyle: "single", borderColor: "green", flexDirection: "column", justifyContent: "center", alignItems: "center", paddingY: 1, paddingX: 2 },
