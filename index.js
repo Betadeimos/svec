@@ -71,7 +71,7 @@ async function main() {
 
             if (step === 'selectFile') {
                 const cwd = process.cwd();
-                const videoFiles = fs.readdirSync(cwd).filter(f => ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v'].includes(path.extname(f).toLowerCase()));
+                const videoFiles = fs.readdirSync(cwd).filter(f => ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v', '.gif'].includes(path.extname(f).toLowerCase()));
                 let sel;
                 if (videoFiles.length > 0) {
                     const opts = videoFiles.map(f => ({ value: f, label: f }));

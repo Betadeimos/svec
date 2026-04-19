@@ -245,7 +245,7 @@ const App = () => {
       try {
           const cwd = process.cwd();
           const files = fs.readdirSync(cwd);
-          const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
+          const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.gif'];
           
           const filtered = files.filter(f => videoExtensions.includes(path.extname(f).toLowerCase()));
           const results = filtered.map(name => {
