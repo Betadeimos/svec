@@ -33,6 +33,10 @@ You are already executing inside the project root directory.
 6. **VERSIONING** — bump version in `package.json` before every push.
 7. **TEST BEFORE COMMIT** — run `npm test` before every backend change; if tests fail, fix first; if test file is missing, create it.
 8. **DOC SYNC** — update AGENTS.md and README.md with every functional change.
+9. **STRICT UI CONSTRAINTS** — terminals use text rows, not pixels.
+    - NEVER use `gap`, `marginTop`, or `marginBottom` between vertically stacked bordered boxes.
+    - Vertically stacked boxes MUST sit physically flush with zero vertical margins so their text borders sit on immediately adjacent rows and merge seamlessly.
+    - NEVER use negative margins to force overlaps; instead, calculate exact row heights.
 
 ---
 
