@@ -28,13 +28,13 @@ Stop paying for stupid third-party tools to do simple video edits. SVEC is a com
 
 ## 📦 Installation
 
-Navigate to the project folder and run the following command:
+Simply run this command to install SVEC globally from GitHub:
 
 ```bash
-npm install -g . --force
+npm install -g Betadeimos/svec@latest
 ```
 
-**Note:** The `--force` flag guarantees that any old or broken versions of SVEC are completely wiped out and replaced by this clean build.
+*This command automatically downloads the code, installs dependencies, and links the `svec` command to your terminal.*
 
 ## 🛠 Usage
 
