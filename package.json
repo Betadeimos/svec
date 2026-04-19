@@ -5,7 +5,7 @@
   "description": "Simplest video editor for the terminal",
   "main": "index.js",
   "bin": {
-    "svec": "index.js"
+    "svec": "./ui.js"
   },
   "scripts": {
     "start": "node index.js",

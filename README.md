@@ -15,50 +15,42 @@
   └───────────────────────────────────────┘
 ```
 
-# SVEC (Simplest Video Editor CLI) v1.1.2 ✂️
+# SVEC (Simplest Video Editor CLI) ✂️
 
-A lightweight, terminal-based video editor built for professionals and enthusiasts who need to process large video files quickly without the bloat of a GUI. SVEC focuses on speed, precision, and zero-headache workflows.
+Stop paying for stupid third-party tools to do simple video edits. SVEC is a completely free, blazing-fast, terminal-based video editor that just works. No ads, no watermarks, no bloatware—just raw FFmpeg power wrapped in a beautiful, keyboard-driven UI.
 
-## 🚀 Key Features
+## ✨ Why SVEC?
 
-- **Blazing Fast Trimming**: Uses stream copying (when possible) to trim GBs of video in seconds.
-- **Natural Time Parsing**: Input times naturally like `1m 20s`, `8.5s`, or `1h`. No more tedious `00:00:00.00` formatting.
-- **Smarter Resizing**: Choose from aspect ratio templates (16:9, 9:16, 1:1, 4:3) and SVEC smartly calculates resolutions. Choose between Fit, Fill (Crop), or Stretch.
-- **Advanced Audio Control**: Dedicated step to select between Original Copy, AAC conversion, or complete removal.
-- **Bootstrap Setup**: New `setup.bat` file allows users without Node.js to install everything automatically via winget.
-- **Drag & Drop Support**: Just drag a file into the terminal. SVEC automatically cleans up quotes and handles paths.
-- **Codec & Format Conversion**: Convert between H.264/H.265 and formats like .mp4, .mkv, .mov, or .gif.
-- **State-Driven Navigation**: Hit `Esc` to go back to the previous step or `Ctrl+Q` to quit anytime.
-- **Smart File Naming**: SVEC automatically increments filenames (e.g., `video_trim_1.mp4`) so you never overwrite work.
-- **Quality 1-10 Scale**: Simplified quality selection (defaults to 5 - Balanced) with real-time file size estimations.
+- **It's Free and Better**: Stop uploading your videos to sketchy websites or buying overpriced software just to trim a clip. SVEC runs locally, privately, and infinitely faster.
+- **Blazing Fast Trimming**: Uses lossless stream copying whenever possible to trim gigabytes of video in seconds.
+- **Wizard Interface**: A seamless 5-step process (Files ➔ Trim ➔ Resize ➔ Format ➔ Export).
+- **Format & Codec Support**: Convert between H.264, H.265 (HEVC), VP9, AV1, ProRes, and formats like MP4, MKV, WEBM, MOV, AVI.
 
 ## 📦 Installation
 
-### Windows (Recommended)
-If you don't have Node.js installed, download and run `setup.bat` from this repository. It will automatically install Node.js and SVEC for you.
-
-### Manual
-Ensure you have [Node.js](https://nodejs.org/) installed, then run:
+Navigate to the project folder and run the following command:
 
 ```bash
-npm install -g Betadeimos/svec
+npm install -g . --force
 ```
 
-*(Windows users on restricted environments: use `npm.cmd install -g Betadeimos/svec`)*.
+**Note:** The `--force` flag guarantees that any old or broken versions of SVEC are completely wiped out and replaced by this clean build.
 
 ## 🛠 Usage
 
-Simply open your terminal in any folder containing videos and type:
+Simply open your terminal anywhere and type:
 
 ```bash
 svec
 ```
 
+*Select your video, trim it, resize it, format it, and export. It's that simple.*
+
 ## ⌨️ Development
 
 1. Clone the repo: `git clone https://github.com/Betadeimos/svec.git`
 2. Install dependencies: `npm install`
-3. Run locally: `node index.js`
+3. Run locally: `node ui.js`
 
 ---
 Built with ❤️ for simple, headache-free video editing.
