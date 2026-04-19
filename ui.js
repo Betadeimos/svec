@@ -812,20 +812,28 @@ const App = () => {
      const aspectStrFinal = selAspectIdx === 0 ? "Original" : (selAspectIdx === 5 ? `${resizeCustomAspectW || '?'}:${resizeCustomAspectH || '?'}` : ASPECT_OPTIONS[selAspectIdx]);
      const scaleStrFinal = selAspectIdx === 0 ? "-" : ['Fit', 'Fill', 'Stretch'][selScaleIdx];
      const resStrFinal = selResIdx === 0 ? "Original" : (selResIdx === 4 ? `${resizeCustomResW || '?'}x${resizeCustomResH || '?'}` : RES_OPTIONS[selResIdx]);
-     const barWidth = Math.max(20, Math.min(80, size.columns - 10));
+     const barWidth = Math.max(20, Math.min(80, size.columns - 20)); 
      const filledBars = Math.floor((exportProgress / 100) * barWidth);
-     const emptyBars = barWidth - filledBars;
 
-     return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "column", paddingX: 1, justifyContent: "center" },
-        error && React.createElement(Box, { borderStyle: "single", borderColor: "red", paddingX: 1, marginBottom: 1 }, React.createElement(Text, { color: "red" }, `Error: ${error}`)),
-        React.createElement(Box, { borderStyle: "single", borderColor: "gray", flexDirection: "column", paddingX: 2, paddingY: 1, marginBottom: 1 },
+     const actionBorderColor = exportPhase === 'done' ? 'green' : (exportPhase === 'exporting' || activeField === 0 ? PRIMARY_COLOR : 'gray');
+
+     return React.createElement(Box, { width: "100%", flexGrow: 1, flexDirection: "column", paddingX: 1, justifyContent: "center", alignItems: "center" },
+        // 1. Top Slot: Error (Fixed height 3)
+        React.createElement(Box, { height: 3, width: "100%", justifyContent: "center", marginBottom: 1 },
+            error ? React.createElement(Box, { borderStyle: "single", borderColor: "red", paddingX: 2 }, 
+                React.createElement(Text, { color: "red" }, `Error: ${error.length > 70 ? error.slice(0, 67) + "..." : error}`)
+            ) : null
+        ),
+
+        // 2. Middle Slot: Recap (Fixed height 6)
+        React.createElement(Box, { height: 6, width: Math.min(size.columns - 4, 100), borderStyle: "single", borderColor: "gray", flexDirection: "column", paddingX: 2, paddingY: 0, marginBottom: 1 },
            React.createElement(Box, { width: "100%", justifyContent: "space-between", flexDirection: "row" },
                React.createElement(Box, { flexDirection: "column" },
                   React.createElement(Text, { color: "gray" }, `Input: `, React.createElement(Text, { color: "white", bold: true }, currentFile.name)),
                   React.createElement(Text, { color: "gray" }, `Trim: `, React.createElement(Text, { color: "white" }, `${trimStart} - ${trimEnd}`)),
                   React.createElement(Text, { color: "gray" }, `Format: `, React.createElement(Text, { color: "white" }, formatStr))
                ),
-               React.createElement(Box, { flexDirection: "column" },
+               React.createElement(Box, { flexDirection: "column", marginX: 2 },
                   React.createElement(Text, { color: "gray" }, `Aspect: `, React.createElement(Text, { color: "white" }, aspectStrFinal)),
                   React.createElement(Text, { color: "gray" }, `Scale: `, React.createElement(Text, { color: "white" }, scaleStrFinal)),
                   React.createElement(Text, { color: "gray" }, `Res: `, React.createElement(Text, { color: "white" }, resStrFinal))
@@ -837,27 +845,31 @@ const App = () => {
                )
            )
         ),
-        exportPhase === 'ready' && React.createElement(Box, { borderStyle: "single", borderColor: activeField === 0 ? PRIMARY_COLOR : "gray", justifyContent: "center", paddingY: 1 },
-           React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "gray", bold: true }, "[ Press Enter to Start Export ]")
-        ),
-        exportPhase === 'exporting' && React.createElement(Box, { width: "100%", justifyContent: "center" },
-           React.createElement(Box, { width: barWidth + 6, borderStyle: "single", borderColor: PRIMARY_COLOR, flexDirection: "column", paddingY: 1, paddingX: 2 },
-              React.createElement(Box, { justifyContent: "space-between", marginBottom: 1 },
-                 React.createElement(Text, { color: "cyan" }, "Processing..."),
-                 React.createElement(Text, { color: "white" }, `${Math.floor(exportProgress)}%`)
-              ),
-              React.createElement(Box, { width: "100%", justifyContent: "center" },
-                 Array.from({ length: barWidth }).map((_, i) => {
-                    const isActive = i < filledBars;
-                    return React.createElement(Text, { key: i, color: isActive ? "white" : "gray", dimColor: !isActive }, "█");
-                 })
-              )
-           )
-        ),
-        exportPhase === 'done' && React.createElement(Box, { borderStyle: "single", borderColor: "green", flexDirection: "column", justifyContent: "center", alignItems: "center", paddingY: 1, paddingX: 2 },
-           React.createElement(Text, { color: "green", bold: true }, "Export Complete!"),
-           React.createElement(Text, { color: "gray", marginTop: 1 }, "Thank you for using SVEC."),
-           React.createElement(Text, { color: "white", marginTop: 1 }, "[Enter] Start New Conversion • [Q] Quit")
+
+        // 3. Bottom Slot: Actions/Progress (Fixed height 7)
+        React.createElement(Box, { height: 7, width: Math.min(size.columns - 4, 100), borderStyle: "single", borderColor: actionBorderColor, justifyContent: "center", alignItems: "center", paddingX: 2 },
+            exportPhase === 'ready' ? (
+                React.createElement(Text, { color: activeField === 0 ? PRIMARY_COLOR : "gray", bold: true }, "[ Press Enter to Start Export ]")
+            ) : exportPhase === 'exporting' ? (
+                React.createElement(Box, { flexDirection: "column", width: barWidth + 2 },
+                   React.createElement(Box, { justifyContent: "space-between", marginBottom: 1 },
+                      React.createElement(Text, { color: "cyan" }, "Processing..."),
+                      React.createElement(Text, { color: "white" }, `${Math.floor(exportProgress)}%`)
+                   ),
+                   React.createElement(Box, { width: "100%", justifyContent: "center" },
+                      Array.from({ length: barWidth }).map((_, i) => {
+                         const isActive = i < filledBars;
+                         return React.createElement(Text, { key: i, color: isActive ? "white" : "gray", dimColor: !isActive }, "█");
+                      })
+                   )
+                )
+            ) : exportPhase === 'done' ? (
+                React.createElement(Box, { flexDirection: "column", justifyContent: "center", alignItems: "center" },
+                   React.createElement(Text, { color: "green", bold: true }, "Export Complete!"),
+                   React.createElement(Text, { color: "gray" }, "Thank you for using SVEC."),
+                   React.createElement(Text, { color: "white" }, "[Enter] Start New Conversion • [Q] Quit")
+                )
+            ) : null
         )
      );
   };
