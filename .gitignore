@@ -5,15 +5,24 @@ node_modules/
 ffmpeg.exe
 ffprobe.exe
 
-# Ignore large video files and the test folder
+# Video Formats
 *.mp4
 *.mkv
 *.mov
 *.avi
+*.webm
+*.gif
+*.flv
+*.wmv
+*.m4v
+
+# Folders
+test_output/
+test_input/
 "test video/"
 "test_video/"
-test_output/
-test_footage.mp4
 
+# Temporary/Backup files
+original_ui.js
 .gemini/
 gha-creds-*.json
